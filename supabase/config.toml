@@ -1,0 +1,5 @@
+[functions.send-push]
+verify_jwt = false
+
+[functions.fetch-ga4-reports]
+verify_jwt = false
