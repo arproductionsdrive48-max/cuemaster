@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Member } from '@/types';
-import { X, Phone, Mail, Trophy, Target, IndianRupee, MessageCircle, Edit } from 'lucide-react';
+import { X, Phone, Mail, Trophy, Target, IndianRupee, MessageCircle, Edit, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import EditMemberModal from './EditMemberModal';
@@ -23,7 +23,17 @@ const membershipColors = {
 const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [currentMember, setCurrentMember] = useState(member);
-  const { clubSettings } = useMembers();
+  const { clubSettings, matchHistory, tournaments } = useMembers();
+
+  // Get trophies from tournaments
+  const memberTrophies: { name: string; tournamentName: string }[] = [];
+  tournaments.forEach(t => {
+    if (t.trophies && t.trophies[currentMember.name]) {
+      t.trophies[currentMember.name].forEach(trophy => {
+        memberTrophies.push({ name: trophy, tournamentName: t.name });
+      });
+    }
+  });
 
   const winRate = currentMember.gamesPlayed > 0 
     ? Math.round((currentMember.wins / currentMember.gamesPlayed) * 100) 
@@ -37,8 +47,20 @@ const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
     sendWhatsAppReminder(
       clubSettings.reminderTemplate,
       currentMember.name,
-      Math.abs(currentMember.creditBalance)
+      Math.abs(currentMember.creditBalance),
+      currentMember.phone
     );
+  };
+
+  // Get player's match history
+  const playerMatches = matchHistory.filter(mh =>
+    mh.players.some(p => p.name === currentMember.name)
+  ).slice(0, 10);
+
+  const formatDuration = (ms: number) => {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
   return (
@@ -66,12 +88,14 @@ const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
                 <span className="text-3xl font-bold">{currentMember.avatar}</span>
               </div>
               <h3 className="text-2xl font-bold mb-2">{currentMember.name}</h3>
-              <span className={cn(
-                'inline-block px-4 py-1.5 rounded-full text-sm font-semibold border',
-                membershipColors[currentMember.membershipType]
-              )}>
-                {currentMember.membershipType} Member
-              </span>
+              {clubSettings.showMembershipBadge && (
+                <span className={cn(
+                  'inline-block px-4 py-1.5 rounded-full text-sm font-semibold border',
+                  membershipColors[currentMember.membershipType]
+                )}>
+                  {currentMember.membershipType} Member
+                </span>
+              )}
             </div>
 
             {/* Contact Info */}
@@ -157,7 +181,85 @@ const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
               <p className="font-semibold">{format(currentMember.lastVisit, 'PPp')}</p>
             </div>
 
-            {/* Actions */}
+            {/* Tournament Trophies */}
+            {memberTrophies.length > 0 && (
+              <div className="glass-card p-4">
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-[hsl(var(--gold))]" />
+                  Tournament Trophies
+                </h4>
+                <div className="space-y-2">
+                  {memberTrophies.map((trophy, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-[hsl(var(--gold))]/5 border border-[hsl(var(--gold))]/20">
+                      <div className="w-8 h-8 rounded-lg bg-[hsl(var(--gold))]/20 flex items-center justify-center">
+                        <Trophy className="w-4 h-4 text-[hsl(var(--gold))]" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{trophy.name}</p>
+                        <p className="text-xs text-muted-foreground">{trophy.tournamentName}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Match History */}
+            {playerMatches.length > 0 && (
+              <div className="glass-card p-4">
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[hsl(var(--gold))]" />
+                  Match History
+                </h4>
+                <div className="space-y-3">
+                  {playerMatches.map(match => {
+                    const playerInfo = match.players.find(p => p.name === currentMember.name);
+                    const opponents = match.players.filter(p => p.name !== currentMember.name);
+                    const isWin = playerInfo?.result === 'win';
+
+                    return (
+                      <div key={match.id} className="p-3 rounded-xl bg-secondary/30 border border-border/30">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              'text-xs font-bold px-2 py-0.5 rounded',
+                              isWin ? 'bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]' : 'bg-primary/20 text-primary'
+                            )}>
+                              {isWin ? 'W' : 'L'}
+                            </span>
+                            <span className="text-sm font-medium">Table {match.tableNumber}</span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {format(match.date, 'MMM d, h:mm a')}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">
+                            vs {opponents.map(o => o.name).join(', ')}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Clock className="w-3 h-3" />
+                            {formatDuration(match.duration)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setShowEditModal(true)}
+                className="flex-1 py-3 rounded-xl bg-secondary text-foreground font-semibold flex items-center justify-center gap-2"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Profile
+              </button>
+            </div>
+
             {currentMember.creditBalance < 0 && (
               <button 
                 onClick={handleWhatsAppReminder}

@@ -33,7 +33,7 @@ const PrivacyScreen = ({ onBack }: PrivacyScreenProps) => {
             </div>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            CueMaster is committed to protecting your privacy and ensuring the security of your personal information. This policy explains how we collect, use, and safeguard your data.
+            Snook OS is committed to protecting your privacy and ensuring the security of your personal information. This policy explains how we collect, use, and safeguard your data.
           </p>
         </div>
 
@@ -170,7 +170,7 @@ const PrivacyScreen = ({ onBack }: PrivacyScreenProps) => {
           <p className="text-sm text-muted-foreground">
             Questions about your privacy?
           </p>
-          <p className="font-semibold mt-1">privacy@cuemaster.app</p>
+          <p className="font-semibold mt-1">privacy@snookos.app</p>
         </div>
       </div>
     </div>

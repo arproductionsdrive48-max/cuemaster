@@ -1,32 +1,70 @@
 import { useState, useMemo } from 'react';
-import { members } from '@/data/mockData';
 import { Member } from '@/types';
+import { useMembers } from '@/contexts/MembersContext';
 import Header from '@/components/layout/Header';
 import PlayerDetailModal from '@/components/leaderboard/PlayerDetailModal';
-import { Trophy, Medal, Target, TrendingUp, Calendar, ChevronRight } from 'lucide-react';
+import { Trophy, Medal, Target, TrendingUp, Calendar, ChevronRight, Star, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { subDays, isAfter, format } from 'date-fns';
 
-type SortType = 'winRate' | 'wins' | 'games';
+type SortType = 'points' | 'wins' | 'games';
+type TimeFilter = 'all' | 'weekly' | 'monthly';
 
-const LeaderboardScreen = () => {
-  const [sortBy, setSortBy] = useState<SortType>('winRate');
-  const [selectedPlayer, setSelectedPlayer] = useState<(Member & { winRate: number }) | null>(null);
+interface LeaderboardScreenProps {
+  onBack?: () => void;
+}
+
+const calculatePoints = (m: Member) => m.wins * 3;
+
+const LeaderboardScreen = ({ onBack }: LeaderboardScreenProps) => {
+  const { members, matchHistory, tournaments } = useMembers();
+  const [sortBy, setSortBy] = useState<SortType>('points');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [selectedPlayer, setSelectedPlayer] = useState<(Member & { winRate: number; points: number }) | null>(null);
   const [selectedRank, setSelectedRank] = useState<number>(0);
 
   const rankedMembers = useMemo(() => {
+    const now = new Date();
+    const filterDate = timeFilter === 'weekly' ? subDays(now, 7) : timeFilter === 'monthly' ? subDays(now, 30) : null;
+
     return [...members]
-      .map(m => ({
-        ...m,
-        winRate: m.gamesPlayed > 0 ? Math.round((m.wins / m.gamesPlayed) * 100) : 0
-      }))
+      .map(m => {
+        if (filterDate) {
+          // Calculate from match history within time period
+          const playerMatches = matchHistory.filter(mh => 
+            isAfter(mh.date, filterDate) &&
+            mh.players.some(p => p.name === m.name)
+          );
+          const wins = playerMatches.filter(mh => 
+            mh.players.find(p => p.name === m.name)?.result === 'win'
+          ).length;
+          const losses = playerMatches.filter(mh => 
+            mh.players.find(p => p.name === m.name)?.result === 'loss'
+          ).length;
+          const games = wins + losses;
+          return {
+            ...m,
+            winRate: games > 0 ? Math.round((wins / games) * 100) : 0,
+            points: wins * 3,
+            wins,
+            losses,
+            gamesPlayed: games,
+          };
+        }
+        return {
+          ...m,
+          winRate: m.gamesPlayed > 0 ? Math.round((m.wins / m.gamesPlayed) * 100) : 0,
+          points: calculatePoints(m),
+        };
+      })
       .sort((a, b) => {
-        if (sortBy === 'winRate') return b.winRate - a.winRate;
+        if (sortBy === 'points') return b.points - a.points;
         if (sortBy === 'wins') return b.wins - a.wins;
         return b.gamesPlayed - a.gamesPlayed;
       });
-  }, [sortBy]);
+  }, [sortBy, members, matchHistory, timeFilter]);
 
-  const handlePlayerClick = (member: Member & { winRate: number }, rank: number) => {
+  const handlePlayerClick = (member: Member & { winRate: number; points: number }, rank: number) => {
     setSelectedPlayer(member);
     setSelectedRank(rank);
   };
@@ -40,36 +78,76 @@ const LeaderboardScreen = () => {
 
   return (
     <div className="min-h-screen pb-24">
-      <Header title="Ranks" />
-
-      {/* Upcoming Tournament Card */}
-      <div className="px-4 mb-6">
-        <div className="glass-card-live p-5">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Trophy className="w-5 h-5 text-gold" />
-                <span className="text-xs font-semibold text-primary uppercase tracking-wide">Upcoming</span>
-              </div>
-              <h3 className="text-lg font-bold mb-1">New Year's Championship</h3>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Calendar className="w-4 h-4" />
-                <span>Jan 1, 2025 • 4:00 PM</span>
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">Prize Pool: ₹10,000</p>
-            </div>
-            <button className="btn-premium px-4 py-2 text-sm">
-              Join
+      {onBack ? (
+        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50">
+          <div className="flex items-center p-4">
+            <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-accent/30 transition-colors">
+              <ArrowLeft className="w-5 h-5" />
             </button>
+            <span className="ml-2 font-semibold text-lg">Player Rankings</span>
           </div>
         </div>
+      ) : (
+        <Header title="Ranks" />
+      )}
+
+      {/* Time Filter */}
+      <div className="px-4 mb-4">
+        <div className="flex gap-2">
+          {([
+            { id: 'all', label: 'All Time' },
+            { id: 'monthly', label: 'Monthly' },
+            { id: 'weekly', label: 'Weekly' },
+          ] as const).map(f => (
+            <button
+              key={f.id}
+              onClick={() => setTimeFilter(f.id)}
+              className={cn(
+                'flex-1 px-4 py-2 rounded-xl text-sm font-medium transition-all',
+                timeFilter === f.id
+                  ? 'bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))]'
+                  : 'bg-secondary text-muted-foreground'
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Upcoming Tournament Card — only show if there's a real upcoming tournament */}
+      {(() => {
+        const upcoming = tournaments.find(t => t.status === 'upcoming');
+        if (!upcoming) return null;
+        return (
+          <div className="px-4 mb-6">
+            <div className="glass-card-live p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Trophy className="w-5 h-5 text-gold" />
+                    <span className="text-xs font-semibold text-primary uppercase tracking-wide">Upcoming</span>
+                  </div>
+                  <h3 className="text-lg font-bold mb-1">{upcoming.name}</h3>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Calendar className="w-4 h-4" />
+                    <span>{format(upcoming.date, 'MMM d, yyyy')}{upcoming.startTime ? ` • ${upcoming.startTime}` : ''}</span>
+                  </div>
+                  {upcoming.prizePool && (
+                    <p className="text-sm text-muted-foreground mt-2">Prize Pool: ₹{upcoming.prizePool.toLocaleString()}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Sort Options */}
       <div className="px-4 mb-4">
         <div className="flex gap-2">
           {([
-            { id: 'winRate', label: 'Win Rate', icon: TrendingUp },
+            { id: 'points', label: 'Points', icon: Star },
             { id: 'wins', label: 'Wins', icon: Trophy },
             { id: 'games', label: 'Games', icon: Target },
           ] as const).map(s => (
@@ -93,7 +171,6 @@ const LeaderboardScreen = () => {
       {/* Top 3 Podium */}
       <div className="px-4 mb-6">
         <div className="flex items-end justify-center gap-3">
-          {/* 2nd Place */}
           {rankedMembers[1] && (
             <button
               onClick={() => handlePlayerClick(rankedMembers[1], 2)}
@@ -105,13 +182,12 @@ const LeaderboardScreen = () => {
                 </div>
                 <Medal className="w-8 h-8 trophy-silver mx-auto mb-1" />
                 <p className="font-semibold text-sm truncate">{rankedMembers[1].name.split(' ')[0]}</p>
-                <p className="text-xs text-muted-foreground">{rankedMembers[1].winRate}%</p>
+                <p className="text-sm font-bold text-[hsl(var(--gold))]">{rankedMembers[1].points} pts</p>
               </div>
               <div className="h-16 bg-silver/20 rounded-b-xl" />
             </button>
           )}
 
-          {/* 1st Place */}
           {rankedMembers[0] && (
             <button
               onClick={() => handlePlayerClick(rankedMembers[0], 1)}
@@ -123,13 +199,12 @@ const LeaderboardScreen = () => {
                 </div>
                 <Trophy className="w-10 h-10 trophy-gold mx-auto mb-1" />
                 <p className="font-bold truncate">{rankedMembers[0].name.split(' ')[0]}</p>
-                <p className="text-sm text-gold font-semibold">{rankedMembers[0].winRate}%</p>
+                <p className="text-sm text-gold font-semibold">{rankedMembers[0].points} pts</p>
               </div>
               <div className="h-24 bg-gold/20 rounded-b-xl" />
             </button>
           )}
 
-          {/* 3rd Place */}
           {rankedMembers[2] && (
             <button
               onClick={() => handlePlayerClick(rankedMembers[2], 3)}
@@ -141,7 +216,7 @@ const LeaderboardScreen = () => {
                 </div>
                 <Medal className="w-8 h-8 trophy-bronze mx-auto mb-1" />
                 <p className="font-semibold text-sm truncate">{rankedMembers[2].name.split(' ')[0]}</p>
-                <p className="text-xs text-muted-foreground">{rankedMembers[2].winRate}%</p>
+                <p className="text-sm font-bold text-[hsl(var(--gold))]">{rankedMembers[2].points} pts</p>
               </div>
               <div className="h-12 bg-bronze/20 rounded-b-xl" />
             </button>
@@ -166,18 +241,16 @@ const LeaderboardScreen = () => {
 
             <div className="flex-1 min-w-0">
               <p className="font-semibold truncate">{member.name}</p>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
                 <span>{member.gamesPlayed} games</span>
-                <span className="text-available">{member.wins}W</span>
-                <span className="text-primary">{member.losses}L</span>
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]">W {member.wins}</span>
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary">L {member.losses}</span>
               </div>
             </div>
 
             <div className="text-right">
-              <p className="text-lg font-bold">{member.winRate}%</p>
-              <div className="w-16 progress-glass mt-1">
-                <div className="progress-fill" style={{ width: `${member.winRate}%` }} />
-              </div>
+              <p className="text-lg font-bold text-[hsl(var(--gold))]">{member.points}</p>
+              <p className="text-xs text-muted-foreground">{member.winRate}% win</p>
             </div>
 
             <ChevronRight className="w-5 h-5 text-muted-foreground" />

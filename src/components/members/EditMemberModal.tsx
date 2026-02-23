@@ -26,19 +26,44 @@ const EditMemberModal = ({ member, onClose, onSave }: EditMemberModalProps) => {
   const [email, setEmail] = useState(member.email);
   const [membershipType, setMembershipType] = useState<MembershipType>(member.membershipType);
   const [creditBalance, setCreditBalance] = useState(member.creditBalance.toString());
+  const [highestBreak, setHighestBreak] = useState((member.highestBreak ?? 0).toString());
 
   const handleSave = () => {
+    // Input validation
     if (!name.trim()) {
       toast.error('Name is required');
+      return;
+    }
+    if (name.trim().length > 100) {
+      toast.error('Name must be less than 100 characters');
+      return;
+    }
+    if (email && email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+    if (phone && phone.trim() && !/^[\+\d\s\-()]{7,20}$/.test(phone.trim())) {
+      toast.error('Please enter a valid phone number');
+      return;
+    }
+    const parsedBalance = parseFloat(creditBalance);
+    if (isNaN(parsedBalance) || !isFinite(parsedBalance)) {
+      toast.error('Credit balance must be a valid number');
+      return;
+    }
+    const parsedBreak = parseInt(highestBreak) || 0;
+    if (parsedBreak < 0) {
+      toast.error('Highest break cannot be negative');
       return;
     }
 
     const updates: Partial<Member> = {
       name: name.trim(),
-      phone,
-      email,
+      phone: phone?.trim() || '',
+      email: email?.trim() || '',
       membershipType,
-      creditBalance: parseFloat(creditBalance) || 0,
+      creditBalance: parsedBalance,
+      highestBreak: parsedBreak,
       isGuest: membershipType === 'Guest',
     };
 
@@ -127,6 +152,21 @@ const EditMemberModal = ({ member, onClose, onSave }: EditMemberModalProps) => {
             />
             <p className="text-xs text-muted-foreground mt-1">
               Positive = credit, Negative = amount due
+            </p>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Highest Break</label>
+            <input
+              type="number"
+              placeholder="0"
+              min="0"
+              value={highestBreak}
+              onChange={(e) => setHighestBreak(e.target.value)}
+              className="input-glass"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Player's all-time highest break (tournament only)
             </p>
           </div>
 

@@ -1,23 +1,25 @@
 import { useState } from 'react';
 import { TableSession } from '@/types';
-import { X, IndianRupee, CheckCircle, Users, QrCode, Copy, Check } from 'lucide-react';
+import { X, IndianRupee, CheckCircle, Users, QrCode, Copy, Check, CreditCard, Banknote } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMembers } from '@/contexts/MembersContext';
 
 interface PaymentModalProps {
   table: TableSession;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (paymentInfo?: { paymentMethod: string; splitCount: number; qrUsed: boolean }) => void;
 }
 
 const PaymentModal = ({ table, onClose, onConfirm }: PaymentModalProps) => {
   const [splitCount, setSplitCount] = useState(1);
   const [copied, setCopied] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card'>('upi');
   const { clubSettings } = useMembers();
 
   const splitAmount = Math.ceil(table.totalBill / splitCount);
-  const UPI_ID = 'cuemaster@upi';
+  const UPI_ID = 'snookos@upi';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(UPI_ID);
@@ -26,9 +28,15 @@ const PaymentModal = ({ table, onClose, onConfirm }: PaymentModalProps) => {
   };
 
   const handleConfirm = () => {
+    if (processing) return; // prevent double tap
+    setProcessing(true);
     setConfirmed(true);
     setTimeout(() => {
-      onConfirm();
+      onConfirm({
+        paymentMethod,
+        splitCount,
+        qrUsed: paymentMethod === 'upi',
+      });
     }, 1500);
   };
 
@@ -91,6 +99,32 @@ const PaymentModal = ({ table, onClose, onConfirm }: PaymentModalProps) => {
             </div>
           </div>
 
+          {/* Payment Method */}
+          <div className="glass-card p-4">
+            <h3 className="font-semibold mb-3">Payment Method</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { id: 'upi' as const, label: 'UPI/QR', icon: QrCode },
+                { id: 'cash' as const, label: 'Cash', icon: Banknote },
+                { id: 'card' as const, label: 'Card', icon: CreditCard },
+              ]).map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setPaymentMethod(m.id)}
+                  className={cn(
+                    'py-3 px-2 rounded-xl text-sm font-medium transition-all flex flex-col items-center gap-1.5',
+                    paymentMethod === m.id
+                      ? 'bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))]'
+                      : 'bg-secondary text-muted-foreground'
+                  )}
+                >
+                  <m.icon className="w-5 h-5" />
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Split Bill */}
           <div className="glass-card p-4">
             <div className="flex items-center justify-between mb-3">
@@ -122,47 +156,52 @@ const PaymentModal = ({ table, onClose, onConfirm }: PaymentModalProps) => {
             )}
           </div>
 
-          {/* QR Code */}
-          <div className="glass-card p-6 text-center">
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <QrCode className="w-5 h-5 text-muted-foreground" />
-              <span className="font-semibold">Scan to Pay</span>
-            </div>
-            
-            {/* UPI QR Code from settings */}
-            <div className="w-48 h-48 mx-auto rounded-2xl overflow-hidden bg-white p-2">
-              <img 
-                src={clubSettings.upiQrCode} 
-                alt="UPI QR Code"
-                className="w-full h-full object-contain"
-              />
-            </div>
+          {/* QR Code - only show for UPI */}
+          {paymentMethod === 'upi' && (
+            <div className="glass-card p-6 text-center">
+              <div className="flex items-center justify-center gap-2 mb-4">
+                <QrCode className="w-5 h-5 text-muted-foreground" />
+                <span className="font-semibold">Scan to Pay</span>
+              </div>
+              
+              <div className="w-48 h-48 mx-auto rounded-2xl overflow-hidden bg-white p-2">
+                <img 
+                  src={clubSettings.upiQrCode} 
+                  alt="UPI QR Code"
+                  className="w-full h-full object-contain"
+                />
+              </div>
 
-            <button
-              onClick={handleCopy}
-              className="flex items-center justify-center gap-2 mx-auto mt-4 px-4 py-2 rounded-xl bg-secondary text-sm"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 text-available" />
-                  <span>Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span>{UPI_ID}</span>
-                </>
-              )}
-            </button>
-          </div>
+              <button
+                onClick={handleCopy}
+                className="flex items-center justify-center gap-2 mx-auto mt-4 px-4 py-2 rounded-xl bg-secondary text-sm"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-4 h-4 text-available" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>{UPI_ID}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
           {/* Confirm Button */}
           <button
             onClick={handleConfirm}
-            className="w-full btn-premium flex items-center justify-center gap-2 py-4"
+            disabled={processing}
+            className={cn(
+              "w-full btn-premium flex items-center justify-center gap-2 py-4",
+              processing && "opacity-50 cursor-not-allowed"
+            )}
           >
             <CheckCircle className="w-5 h-5" />
-            Mark as Paid
+            {processing ? 'Processing...' : 'Mark as Paid'}
           </button>
         </div>
       </div>

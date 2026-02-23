@@ -16,6 +16,7 @@ import {
 
 interface ManageTablesModalProps {
   tables: IndividualTablePricing[];
+  defaultBillingMode?: string;
   onClose: () => void;
   onSave: (tables: IndividualTablePricing[]) => void;
 }
@@ -27,7 +28,7 @@ interface TableFormData {
   image?: string;
 }
 
-const ManageTablesModal = ({ tables, onClose, onSave }: ManageTablesModalProps) => {
+const ManageTablesModal = ({ tables, defaultBillingMode = 'hourly', onClose, onSave }: ManageTablesModalProps) => {
   const [localTables, setLocalTables] = useState<IndividualTablePricing[]>(tables);
   const [editingTable, setEditingTable] = useState<TableFormData | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -50,6 +51,7 @@ const ManageTablesModal = ({ tables, onClose, onSave }: ManageTablesModalProps) 
     const newTablePricing: IndividualTablePricing = {
       ...newTable,
       useGlobal: true,
+      billingMode: defaultBillingMode as any,
     };
 
     setLocalTables(prev => [...prev, newTablePricing].sort((a, b) => a.tableNumber - b.tableNumber));

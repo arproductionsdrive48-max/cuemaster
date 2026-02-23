@@ -12,7 +12,7 @@ const tabs: { id: TabType | 'more'; icon: React.ComponentType<{ className?: stri
   { id: 'home', icon: Home, label: 'Home' },
   { id: 'tables', icon: Table2, label: 'Tables' },
   { id: 'events', icon: Trophy, label: 'Events' },
-  { id: 'members', icon: Users, label: 'Members' },
+  { id: 'members', icon: Users, label: 'Players' },
   { id: 'more', icon: MoreHorizontal, label: 'More' },
 ];
 

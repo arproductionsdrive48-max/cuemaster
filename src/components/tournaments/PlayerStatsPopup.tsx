@@ -1,35 +1,48 @@
 import { X, Trophy, Target, Zap, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useMembers } from '@/contexts/MembersContext';
 
 interface PlayerStatsPopupProps {
   playerName: string;
+  tournamentTrophies?: string[];
   onClose: () => void;
 }
 
-// Mock player stats
-const getPlayerStats = (name: string) => ({
-  name,
-  rank: Math.floor(Math.random() * 100) + 1,
-  id: Math.floor(Math.random() * 900) + 100,
-  tier: 'PRO',
-  totalGames: Math.floor(Math.random() * 200) + 50,
-  winRate: Math.floor(Math.random() * 30) + 60,
-  highestBreak: Math.floor(Math.random() * 100) + 80,
-  trophies: [
-    { name: 'Winter Championship', date: 'December 2023' },
-    { name: 'Club Masters Open', date: 'August 2023' },
-    { name: 'Regional Qualifiers', date: 'June 2023' }
-  ]
-});
+const PlayerStatsPopup = ({ playerName, tournamentTrophies = [], onClose }: PlayerStatsPopupProps) => {
+  const { matchHistory, tournaments } = useMembers();
 
-const PlayerStatsPopup = ({ playerName, onClose }: PlayerStatsPopupProps) => {
-  const stats = getPlayerStats(playerName);
+  // Get real stats from match history
+  const playerMatches = matchHistory.filter(m => m.players.some(p => p.name === playerName));
+  const wins = playerMatches.filter(m => m.players.find(p => p.name === playerName)?.result === 'win').length;
+  const total = playerMatches.length;
+  const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+  // Collect trophies from all completed tournaments
+  const allTournamentTrophies: { name: string; tournamentName: string }[] = [];
+  tournaments.forEach(t => {
+    if (t.trophies && t.trophies[playerName]) {
+      t.trophies[playerName].forEach(trophy => {
+        allTournamentTrophies.push({ name: trophy, tournamentName: t.name });
+      });
+    }
+  });
+
+  // Merge with passed trophies (for current tournament not yet saved)
+  const allTrophies = [
+    ...allTournamentTrophies,
+    ...tournamentTrophies
+      .filter(t => !allTournamentTrophies.some(at => at.name === t))
+      .map(t => ({ name: t, tournamentName: 'Current Tournament' }))
+  ];
+
+  const visibleTrophies = allTrophies.slice(0, 3);
+  const remainingCount = allTrophies.length - visibleTrophies.length;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-sm bg-background rounded-3xl overflow-hidden animate-scale-in">
         {/* Close Button */}
-        <button 
+        <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 rounded-full hover:bg-accent/30 transition-colors"
         >
@@ -43,18 +56,18 @@ const PlayerStatsPopup = ({ playerName, onClose }: PlayerStatsPopupProps) => {
               {playerName.split(' ').map(n => n[0]).join('')}
             </div>
             <span className="absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))] text-xs font-bold">
-              {stats.tier}
+              PRO
             </span>
           </div>
-          
-          <h2 className="text-xl font-bold mb-1">{stats.name}</h2>
+
+          <h2 className="text-xl font-bold mb-1">{playerName}</h2>
           <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
               <Trophy className="w-4 h-4 text-[hsl(var(--gold))]" />
-              Rank #{stats.rank}
+              {allTrophies.length} Trophies
             </span>
             <span>•</span>
-            <span>ID: {stats.id}</span>
+            <span>{total} Matches</span>
           </div>
         </div>
 
@@ -66,14 +79,14 @@ const PlayerStatsPopup = ({ playerName, onClose }: PlayerStatsPopupProps) => {
                 <Target className="w-3.5 h-3.5" />
                 TOTAL GAMES
               </div>
-              <p className="text-2xl font-bold">{stats.totalGames}</p>
+              <p className="text-2xl font-bold">{total}</p>
             </div>
             <div className="glass-card p-4">
               <div className="flex items-center gap-2 text-xs text-available mb-1">
                 <Zap className="w-3.5 h-3.5" />
                 WIN RATE
               </div>
-              <p className="text-2xl font-bold text-available">{stats.winRate}%</p>
+              <p className="text-2xl font-bold text-available">{winRate}%</p>
             </div>
           </div>
 
@@ -81,9 +94,9 @@ const PlayerStatsPopup = ({ playerName, onClose }: PlayerStatsPopupProps) => {
             <div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                 <span className="text-[hsl(var(--gold))]">★</span>
-                HIGHEST BREAK
+                WINS / LOSSES
               </div>
-              <p className="text-2xl font-bold">{stats.highestBreak}</p>
+              <p className="text-2xl font-bold">{wins} <span className="text-primary text-lg">/ {total - wins}</span></p>
             </div>
             <div className="w-12 h-12 rounded-xl bg-[hsl(var(--gold))]/20 flex items-center justify-center">
               <Trophy className="w-6 h-6 text-[hsl(var(--gold))]" />
@@ -91,36 +104,39 @@ const PlayerStatsPopup = ({ playerName, onClose }: PlayerStatsPopupProps) => {
           </div>
         </div>
 
-        {/* Recent Trophies */}
+        {/* Trophies */}
         <div className="px-6 pb-6">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold">Recent Trophies</span>
-            <button className="text-xs text-muted-foreground">View All</button>
+            <span className="text-sm font-semibold">Tournament Trophies</span>
+            {remainingCount > 0 && (
+              <span className="text-xs text-muted-foreground">+{remainingCount} more</span>
+            )}
           </div>
-          <div className="space-y-2">
-            {stats.trophies.map((trophy, index) => (
-              <div key={index} className="glass-card p-3 flex items-center gap-3">
-                <div className={cn(
-                  "w-10 h-10 rounded-xl flex items-center justify-center",
-                  index === 0 ? "bg-[hsl(var(--gold))]/20" :
-                  index === 1 ? "bg-silver/20" :
-                  "bg-bronze/20"
-                )}>
-                  <Trophy className={cn(
-                    "w-5 h-5",
-                    index === 0 ? "text-[hsl(var(--gold))]" :
-                    index === 1 ? "text-silver" :
-                    "text-bronze"
-                  )} />
+          {allTrophies.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-3">No trophies yet</p>
+          ) : (
+            <div className="space-y-2">
+              {visibleTrophies.map((trophy, index) => (
+                <div key={index} className="glass-card p-3 flex items-center gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center",
+                    index === 0 ? "bg-[hsl(var(--gold))]/20" :
+                    index === 1 ? "bg-secondary" :
+                    "bg-secondary"
+                  )}>
+                    <Trophy className={cn(
+                      "w-5 h-5",
+                      index === 0 ? "text-[hsl(var(--gold))]" : "text-muted-foreground"
+                    )} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{trophy.name}</p>
+                    <p className="text-xs text-muted-foreground">{trophy.tournamentName}</p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{trophy.name}</p>
-                  <p className="text-xs text-muted-foreground">{trophy.date}</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

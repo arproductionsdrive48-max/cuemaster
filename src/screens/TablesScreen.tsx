@@ -1,49 +1,110 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { TableSession, BillingMode } from '@/types';
-import { initialTables } from '@/data/mockData';
 import Header from '@/components/layout/Header';
 import TableCard from '@/components/tables/TableCard';
 import TableDetailModal from '@/components/tables/TableDetailModal';
 import PaymentModal from '@/components/tables/PaymentModal';
 import StartSessionModal from '@/components/tables/StartSessionModal';
+import MatchHistoryModal from '@/components/tables/MatchHistoryModal';
+import WinnerSelectionModal from '@/components/tables/WinnerSelectionModal';
 import { useMembers } from '@/contexts/MembersContext';
-import { Plus, Store } from 'lucide-react';
+import { Plus, Store, History, Table2, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 const TablesScreen = () => {
-  const [tables, setTables] = useState<TableSession[]>(initialTables);
+  const { tables, updateTable, clubSettings, addMatchRecord, updateMember, members, isOnline } = useMembers();
   const [selectedTable, setSelectedTable] = useState<TableSession | null>(null);
   const [paymentTable, setPaymentTable] = useState<TableSession | null>(null);
+  const [winnerTable, setWinnerTable] = useState<TableSession | null>(null);
   const [startSessionTable, setStartSessionTable] = useState<TableSession | null>(null);
-  const { clubSettings } = useMembers();
+  const [showMatchHistory, setShowMatchHistory] = useState(false);
 
   const handleTableUpdate = (updated: TableSession) => {
-    setTables(prev => prev.map(t => t.id === updated.id ? updated : t));
+    // Persist the update to Supabase immediately
+    updateTable(updated);
     setSelectedTable(updated);
   };
 
   const handleEndSession = (table: TableSession) => {
     setSelectedTable(null);
-    setPaymentTable(table);
+    setWinnerTable(table);
   };
 
-  const handlePaymentConfirm = () => {
+  const handleWinnerConfirm = (winnersMap: Record<string, 'win' | 'loss' | 'draw'>) => {
+    if (!winnerTable) return;
+    winnerTable.players.forEach(playerName => {
+      const member = members.find(m => m.name === playerName);
+      if (member) {
+        const result = winnersMap[playerName];
+        updateMember(member.id, {
+          wins: result === 'win' ? member.wins + 1 : member.wins,
+          losses: result === 'loss' ? member.losses + 1 : member.losses,
+          gamesPlayed: member.gamesPlayed + 1,
+          lastVisit: new Date(),
+        });
+      }
+    });
+    const tableWithWinners: TableSession & { _winnersMap?: Record<string, 'win' | 'loss' | 'draw'> } = {
+      ...winnerTable,
+      // @ts-ignore
+      _winnersMap: winnersMap,
+    };
+    setWinnerTable(null);
+    setPaymentTable(tableWithWinners);
+  };
+
+  const handlePaymentConfirm = (paymentInfo?: { paymentMethod: string; splitCount: number; qrUsed: boolean }) => {
     if (paymentTable) {
-      setTables(prev => prev.map(t =>
-        t.id === paymentTable.id
-          ? { ...t, status: 'free' as const, players: [], startTime: null, pausedTime: 0, items: [], totalBill: 0, frameCount: 0 }
-          : t
-      ));
+      // @ts-ignore
+      const winnersMap: Record<string, 'win' | 'loss' | 'draw'> = paymentTable._winnersMap ?? {};
+      const gstAmount: number = (paymentTable as any)._gstAmount ?? 0;
+      const sessionEndTime = new Date();
+      addMatchRecord({
+        tableNumber: paymentTable.tableNumber,
+        players: paymentTable.players.map(name => ({
+          name,
+          result: winnersMap[name] ?? 'draw',
+        })),
+        date: sessionEndTime,
+        sessionStartTime: paymentTable.startTime ?? undefined,
+        sessionEndTime,
+        duration: paymentTable.startTime ? Date.now() - paymentTable.startTime.getTime() - paymentTable.pausedTime : 0,
+        billingMode: paymentTable.billingMode,
+        totalBill: paymentTable.totalBill,
+        gstAmount,
+        items: paymentTable.items.length > 0 ? paymentTable.items : undefined,
+        ...(paymentInfo && {
+          paymentMethod: paymentInfo.paymentMethod,
+          splitCount: paymentInfo.splitCount,
+          qrUsed: paymentInfo.qrUsed,
+        }),
+      } as any);
+      // Reset table to free state in Supabase (clears active session)
+      const clearedTable: TableSession = {
+        ...paymentTable,
+        status: 'free' as const,
+        players: [],
+        startTime: null,
+        pausedTime: 0,
+        items: [],
+        totalBill: 0,
+        frameCount: 0,
+      };
+      updateTable(clearedTable);
       setPaymentTable(null);
     }
   };
 
   const handleStartNewSession = () => {
+    if (!isOnline) {
+      toast.error('Offline – changes will not save');
+      return;
+    }
     if (!clubSettings.isOpen) {
       toast.error('Club is currently closed. Cannot start new sessions.');
       return;
     }
-    
     const freeTable = tables.find(t => t.status === 'free');
     if (freeTable) {
       setStartSessionTable(freeTable);
@@ -53,16 +114,17 @@ const TablesScreen = () => {
   };
 
   const handleTableClick = (table: TableSession) => {
+    if (!isOnline) {
+      toast.error('Offline – changes will not save');
+      return;
+    }
     if (!clubSettings.isOpen && table.status === 'free') {
       toast.error('Club is currently closed. Cannot start new sessions.');
       return;
     }
-    
-    // If table is free, show start session modal
     if (table.status === 'free') {
       setStartSessionTable(table);
     } else {
-      // If occupied/paused, show detail modal
       setSelectedTable(table);
     }
   };
@@ -74,15 +136,25 @@ const TablesScreen = () => {
       startTime: new Date(),
       billingMode,
       frameCount: 0,
+      players: table.players,
     };
-    setTables(prev => prev.map(t => t.id === table.id ? updatedTable : t));
+    // Persist to Supabase (creates session row + updates table status)
+    updateTable(updatedTable);
     setStartSessionTable(null);
     setSelectedTable(updatedTable);
     toast.success(`Session started on Table ${table.tableNumber} (${billingMode.replace('_', ' ')} mode)`);
   };
 
   const getTableConfig = (tableNumber: number) => {
-    return clubSettings.individualTablePricing?.find(t => t.tableNumber === tableNumber);
+    // Derive from live Supabase tables data
+    const dbTable = tables.find(t => t.tableNumber === tableNumber);
+    return dbTable ? {
+      tableNumber: dbTable.tableNumber,
+      tableName: `Table ${String(dbTable.tableNumber).padStart(2, '0')}`,
+      tableType: 'Snooker' as const,
+      useGlobal: true,
+      billingMode: dbTable.billingMode,
+    } : undefined;
   };
 
   const occupiedCount = tables.filter(t => t.status === 'occupied').length;
@@ -90,10 +162,16 @@ const TablesScreen = () => {
 
   return (
     <div className="min-h-screen pb-24">
-      <Header title="CueMaster" showClubStatus />
+      <Header title="Snook OS" showClubStatus />
 
-      {/* Club Closed Banner */}
-      {!clubSettings.isOpen && (
+      {!isOnline && (
+        <div className="mx-4 mb-4 p-3 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center gap-3">
+          <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
+          <p className="text-sm font-medium text-destructive">Offline – table data unavailable</p>
+        </div>
+      )}
+
+      {isOnline && !clubSettings.isOpen && (
         <div className="mx-4 mb-4 p-3 rounded-2xl bg-primary/20 border border-primary/30 flex items-center gap-3">
           <Store className="w-5 h-5 text-primary" />
           <div className="flex-1">
@@ -121,24 +199,48 @@ const TablesScreen = () => {
         </div>
       </div>
 
-      {/* Tables Grid */}
-      <div className="px-4">
-        <div className="grid grid-cols-2 gap-3 stagger-children">
-          {tables.map(table => (
-            <TableCard
-              key={table.id}
-              table={table}
-              onClick={() => handleTableClick(table)}
-              disabled={!clubSettings.isOpen && table.status === 'free'}
-            />
-          ))}
-        </div>
+      {/* History Button */}
+      <div className="px-4 mb-4">
+        <button
+          onClick={() => setShowMatchHistory(true)}
+          className="w-full glass-card p-3 flex items-center justify-center gap-2 hover:bg-accent/30 transition-all"
+        >
+          <History className="w-5 h-5 text-[hsl(var(--gold))]" />
+          <span className="font-medium text-sm">Match History</span>
+        </button>
       </div>
+
+      {/* Tables Grid */}
+      {tables.length === 0 ? (
+        <div className="px-4">
+          <div className="glass-card p-10 text-center space-y-3">
+            <Table2 className="w-12 h-12 text-muted-foreground mx-auto" />
+            <p className="font-semibold text-muted-foreground">No active tables</p>
+            <p className="text-xs text-muted-foreground">
+              {isOnline ? 'Configure tables in Settings → Manage Tables' : 'Connect to Supabase to view tables'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4">
+          <div className="grid grid-cols-2 gap-3 stagger-children">
+            {tables.map(table => (
+              <TableCard
+                key={table.id}
+                table={table}
+                onClick={() => handleTableClick(table)}
+                disabled={(!clubSettings.isOpen && table.status === 'free') || !isOnline}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* FAB */}
       <button
         onClick={handleStartNewSession}
-        className={`fab bottom-24 right-4 ${!clubSettings.isOpen ? 'opacity-50' : ''}`}
+        title={!isOnline ? 'Offline – changes will not save' : 'Start new session'}
+        className={cn(`fab bottom-24 right-4`, (!clubSettings.isOpen || !isOnline) ? 'opacity-50' : '')}
       >
         <Plus className="w-6 h-6 text-primary-foreground" />
       </button>
@@ -150,6 +252,18 @@ const TablesScreen = () => {
           onClose={() => setSelectedTable(null)}
           onUpdate={handleTableUpdate}
           onEndSession={handleEndSession}
+        />
+      )}
+
+      {winnerTable && (
+        <WinnerSelectionModal
+          table={winnerTable}
+          onClose={() => setWinnerTable(null)}
+          onConfirm={handleWinnerConfirm}
+          onAddPlayer={() => {
+            setSelectedTable(winnerTable);
+            setWinnerTable(null);
+          }}
         />
       )}
 
@@ -171,6 +285,10 @@ const TablesScreen = () => {
           onClose={() => setStartSessionTable(null)}
           onStart={(billingMode) => handleStartSession(startSessionTable, billingMode)}
         />
+      )}
+
+      {showMatchHistory && (
+        <MatchHistoryModal onClose={() => setShowMatchHistory(false)} />
       )}
     </div>
   );

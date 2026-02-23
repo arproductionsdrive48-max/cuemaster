@@ -78,7 +78,7 @@ const HelpScreen = ({ onBack }: HelpScreenProps) => {
           </div>
           <div className="flex gap-3 mt-4">
             <a 
-              href="mailto:support@cuemaster.app"
+              href="mailto:support@snookos.app"
               className="flex-1 btn-glass flex items-center justify-center gap-2"
             >
               <Mail className="w-4 h-4" />
@@ -154,10 +154,10 @@ const HelpScreen = ({ onBack }: HelpScreenProps) => {
 
         {/* App Info */}
         <div className="glass-card p-4 text-center">
-          <p className="text-sm text-muted-foreground">CueMaster App</p>
+          <p className="text-sm text-muted-foreground">Snook OS App</p>
           <p className="text-xs text-muted-foreground mt-1">Version 1.0.0</p>
           <p className="text-xs text-muted-foreground mt-2">
-            support@cuemaster.app
+            support@snookos.app
           </p>
         </div>
       </div>

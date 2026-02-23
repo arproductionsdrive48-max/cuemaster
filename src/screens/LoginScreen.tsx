@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Lock, Headphones } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import loginBg from '@/assets/login-bg.jpg';
+import { supabase, isSupabaseConnected } from '@/lib/supabase';
+import { toast } from 'sonner';
+import { warmUpSchemaCache } from '@/lib/schemaCache';
+
 
 interface LoginScreenProps {
   onLogin: () => void;
@@ -14,13 +18,49 @@ const LoginScreen = ({ onLogin }: LoginScreenProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [error, setError] = useState<string | null>(null);
+
+  // Warm up schema cache as soon as login screen mounts
+  useEffect(() => {
+    warmUpSchemaCache();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      onLogin();
-    }, 1000);
+
+    // If Supabase is connected, use real auth
+    if (isSupabaseConnected() && supabase) {
+      try {
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (authError) {
+          setError('Invalid email or password. Please try again.');
+          return;
+        }
+        if (data?.user) {
+          onLogin();
+        }
+      } catch {
+        setError('An unexpected error occurred. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Demo mode: validate non-empty fields only (no real server)
+      if (!email.trim() || !password) {
+        setError('Please enter your email and password.');
+        setIsLoading(false);
+        return;
+      }
+      setTimeout(() => {
+        setIsLoading(false);
+        onLogin();
+      }, 800);
+    }
   };
 
   return (
@@ -42,34 +82,18 @@ const LoginScreen = ({ onLogin }: LoginScreenProps) => {
         {/* Logo Section */}
         <div className="text-center mb-10 animate-fade-in-up">
           {/* Logo Icon */}
-          <div className="w-24 h-24 mx-auto mb-5 rounded-3xl bg-gradient-to-br from-[hsl(0_0%_15%)] to-[hsl(0_0%_8%)] border border-white/20 flex items-center justify-center shadow-2xl relative overflow-hidden">
-            {/* Glow effect */}
-            <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--gold))]/20 to-transparent" />
-            {/* Snooker cue and ball icon */}
-            <svg viewBox="0 0 48 48" className="w-14 h-14 relative z-10">
-              {/* Cue stick */}
-              <line 
-                x1="8" y1="40" x2="36" y2="12" 
-                stroke="hsl(var(--gold))" 
-                strokeWidth="3" 
-                strokeLinecap="round"
-              />
-              {/* Cue ball */}
-              <circle 
-                cx="38" cy="10" r="6" 
-                fill="none" 
-                stroke="hsl(var(--gold))" 
-                strokeWidth="2"
-              />
-              {/* Ball shine */}
-              <circle cx="36" cy="8" r="1.5" fill="hsl(var(--gold))" opacity="0.7" />
-            </svg>
+          <div className="w-24 h-24 mx-auto mb-5 rounded-3xl bg-transparent flex items-center justify-center relative overflow-hidden">
+            <img 
+              src="/logo.png?v=2" 
+              alt="Snook OS Logo" 
+              className="w-full h-full object-contain"
+            />
           </div>
           
           {/* App Name */}
           <h1 className="text-4xl font-bold tracking-tight">
-            <span className="text-foreground">Cue</span>
-            <span className="text-[hsl(var(--gold))]">Master</span>
+            <span className="text-foreground">Snook</span>
+            <span className="text-[hsl(var(--gold))]"> OS</span>
           </h1>
           
           {/* Subtitle */}
@@ -109,7 +133,7 @@ const LoginScreen = ({ onLogin }: LoginScreenProps) => {
                 )} />
                 <input
                   type="email"
-                  placeholder="staff@cuemaster.com"
+                  placeholder="staff@snookos.app"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onFocus={() => setFocusedField('email')}
@@ -165,6 +189,13 @@ const LoginScreen = ({ onLogin }: LoginScreenProps) => {
                 Forgot Password?
               </button>
             </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="rounded-xl px-4 py-3 bg-destructive/10 border border-destructive/30 text-destructive text-sm text-center">
+                {error}
+              </div>
+            )}
 
             {/* Login Button */}
             <button

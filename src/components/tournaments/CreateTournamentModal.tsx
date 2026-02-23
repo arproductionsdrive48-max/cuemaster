@@ -92,10 +92,15 @@ const CreateTournamentModal = ({ onClose, onCreate }: CreateTournamentModalProps
 
     const validPrizes = prizeDistribution.filter(p => p.amount > 0);
 
+    // Build a proper ISO Date to avoid "invalid input syntax for type timestamp"
+    const isoDate = new Date(formData.date + 'T' + (formData.time || '10:00') + ':00');
+    console.log('[Snook OS] CreateTournament → isoDate:', isoDate.toISOString(), 'startTime:', formData.time || '10:00');
+
     onCreate({
       name: formData.name,
       type: formData.type,
-      date: new Date(formData.date + 'T' + (formData.time || '10:00')),
+      date: isoDate,
+      startTime: formData.time || '10:00',
       location: formData.location,
       maxPlayers: formData.maxPlayers,
       entryFee: formData.entryFee,
@@ -197,14 +202,25 @@ const CreateTournamentModal = ({ onClose, onCreate }: CreateTournamentModalProps
               <label className="text-xs text-[hsl(var(--gold))] uppercase tracking-wide font-medium mb-2 block">
                 Date & Start Time
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-xl bg-secondary/50 border border-border/50 text-foreground outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50"
-                />
-                <CalendarIcon className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[hsl(var(--gold))] pointer-events-none" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={formData.date}
+                    onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl bg-secondary/50 border border-border/50 text-foreground outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50"
+                  />
+                  <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--gold))] pointer-events-none" />
+                </div>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={formData.time}
+                    onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
+                    className="w-full px-4 py-3 pr-10 rounded-xl bg-secondary/50 border border-border/50 text-foreground outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50"
+                  />
+                  <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--gold))] pointer-events-none" />
+                </div>
               </div>
             </div>
 
@@ -370,8 +386,8 @@ const CreateTournamentModal = ({ onClose, onCreate }: CreateTournamentModalProps
         </div>
       </div>
 
-      {/* Bottom Action */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border/50">
+      {/* Bottom Action - z-[70] to be above tab bar */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 pb-24 bg-background/80 backdrop-blur-xl border-t border-border/50 z-[70]">
         <button
           onClick={handleSubmit}
           className="w-full py-3.5 rounded-xl bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))] font-semibold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all"

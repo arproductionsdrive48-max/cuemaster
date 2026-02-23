@@ -2,6 +2,7 @@ import { Member } from '@/types';
 import { cn } from '@/lib/utils';
 import { IndianRupee, Calendar } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useMembers } from '@/contexts/MembersContext';
 
 interface MemberCardProps {
   member: Member;
@@ -17,6 +18,8 @@ const membershipColors: Record<string, string> = {
 };
 
 const MemberCard = ({ member, onClick }: MemberCardProps) => {
+  const { clubSettings } = useMembers();
+
   return (
     <button
       onClick={onClick}
@@ -31,18 +34,25 @@ const MemberCard = ({ member, onClick }: MemberCardProps) => {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <h3 className="font-semibold truncate">{member.name}</h3>
-          <span className={cn(
-            'px-2 py-0.5 rounded-full text-[10px] font-semibold border',
-            membershipColors[member.membershipType]
-          )}>
-            {member.membershipType}
-          </span>
+          {clubSettings.showMembershipBadge && (
+            <span className={cn(
+              'px-2 py-0.5 rounded-full text-[10px] font-semibold border',
+              membershipColors[member.membershipType]
+            )}>
+              {member.membershipType}
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5" />
             <span>{formatDistanceToNow(member.lastVisit, { addSuffix: true })}</span>
+          </div>
+          {/* W/L display */}
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]">W {member.wins}</span>
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary">L {member.losses}</span>
           </div>
         </div>
       </div>

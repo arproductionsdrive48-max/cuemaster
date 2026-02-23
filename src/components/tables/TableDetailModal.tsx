@@ -5,11 +5,19 @@ import { useMembers } from '@/contexts/MembersContext';
 import { menuItems } from '@/data/mockData';
 import { 
   ArrowLeft, MoreVertical, Play, Pause, Square, Plus, X, Minus,
-  UserPlus, Search, ChevronRight, Users, Calendar, Trophy, Camera, BarChart3, Settings
+  UserPlus, Search, ChevronRight, Users, Calendar, Trophy, Camera, BarChart3, Settings,
+  Edit, Trash2, Clock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import AddPlayerModal from './AddPlayerModal';
-import PaymentModal from './PaymentModal';
+import MatchHistoryModal from './MatchHistoryModal';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface TableDetailModalProps {
   table: TableSession;
@@ -50,7 +58,7 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
   const [playerSearch, setPlayerSearch] = useState('');
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
   const [showAllItems, setShowAllItems] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showMatchHistory, setShowMatchHistory] = useState(false);
   const [activeTab, setActiveTab] = useState<'tables' | 'members' | 'bookings' | 'leaderboard' | 'cctv' | 'reports' | 'settings'>('tables');
 
   // Get the correct rate for this table based on billing mode
@@ -77,21 +85,41 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
 
   // Calculate table charge based on billing mode
   const calculateTableCharge = () => {
+    const totalSeconds = Math.floor(elapsed / 1000);
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    const totalMinutes = Math.floor(elapsed / 60000); // count only completed minutes for per-minute billing
+    const totalHours = Math.ceil(elapsed / 3600000);  // always round UP for hourly billing
+
+    let charge = 0;
     switch (table.billingMode) {
       case 'hourly':
-        return Math.ceil(elapsed / 3600000) * tableRate;
+        charge = totalHours * tableRate;
+        break;
       case 'per_minute':
-        return Math.ceil(elapsed / 60000) * perMinuteRate;
+        charge = totalMinutes * perMinuteRate;
+        break;
       case 'per_frame':
-        return table.frameCount * perFrameRate;
+        charge = table.frameCount * perFrameRate;
+        break;
       default:
-        return Math.ceil(elapsed / 3600000) * tableRate;
+        charge = totalHours * tableRate;
     }
+
+    console.log(
+      `[Snook OS] Billing: ${hrs}h${mins}m${secs}s | elapsed=${elapsed}ms | pausedTime=${table.pausedTime}ms | ` +
+      `mode=${table.billingMode} | totalMin=${totalMinutes} | rate=${table.billingMode === 'per_minute' ? perMinuteRate : tableRate} | charge=₹${charge}`
+    );
+    return charge;
   };
 
   const tableCharge = calculateTableCharge();
   const itemsTotal = table.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const totalBill = tableCharge + itemsTotal;
+  const subtotal = tableCharge + itemsTotal;
+  // Apply GST if enabled
+  const gstAmount = clubSettings.gstEnabled ? Math.round((subtotal * clubSettings.gstRate) / 100) : 0;
+  const totalBill = subtotal + gstAmount;
 
   // Get rate display text based on billing mode
   const getRateDisplay = () => {
@@ -131,7 +159,19 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
     });
   };
 
+  // Track when pause started — if already paused when modal opens, use startTime + elapsed to estimate
+  const [pauseStartedAt, setPauseStartedAt] = useState<number | null>(() => {
+    if (table.status === 'paused' && table.startTime) {
+      // Estimate when pause started: now minus 0 (we don't know exactly, but elapsed is frozen)
+      return Date.now();
+    }
+    return null;
+  });
+
   const handlePause = () => {
+    const now = Date.now();
+    console.log('[Snook OS] Pause at', now, 'current pausedTime:', table.pausedTime);
+    setPauseStartedAt(now);
     onUpdate({
       ...table,
       status: 'paused',
@@ -139,10 +179,15 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
   };
 
   const handleResume = () => {
+    const now = Date.now();
+    const pauseDuration = pauseStartedAt ? now - pauseStartedAt : 0;
+    const newPausedTime = table.pausedTime + pauseDuration;
+    console.log('[Snook OS] Resume: pauseStartedAt=', pauseStartedAt, 'pauseDuration=', pauseDuration, 'newPausedTime=', newPausedTime);
+    setPauseStartedAt(null);
     onUpdate({
       ...table,
       status: 'occupied',
-      pausedTime: table.pausedTime + (Date.now() - (table.startTime?.getTime() || 0)),
+      pausedTime: newPausedTime,
     });
   };
 
@@ -156,6 +201,22 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
       );
     } else {
       newItems = [...table.items, { ...menuItem, quantity: 1 }];
+    }
+
+    onUpdate({ ...table, items: newItems, totalBill });
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    const existingItem = table.items.find(i => i.id === itemId);
+    if (!existingItem) return;
+
+    let newItems: OrderItem[];
+    if (existingItem.quantity <= 1) {
+      newItems = table.items.filter(i => i.id !== itemId);
+    } else {
+      newItems = table.items.map(i =>
+        i.id === itemId ? { ...i, quantity: i.quantity - 1 } : i
+      );
     }
 
     onUpdate({ ...table, items: newItems, totalBill });
@@ -187,20 +248,15 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
   };
 
   const handleEndSession = () => {
-    setShowPaymentModal(true);
-  };
-
-  const handlePaymentConfirm = () => {
-    setShowPaymentModal(false);
-    onEndSession({ ...table, totalBill });
+    onEndSession({ ...table, totalBill, _gstAmount: gstAmount } as any);
   };
 
   const filteredMembers = members.filter(m =>
     m.name.toLowerCase().includes(playerSearch.toLowerCase())
   );
 
-  // Use inventory items for Quick POS - get first 6
-  const quickPosItems = inventory.slice(0, 6);
+  // Use inventory items for Quick POS - show first 6 or all
+  const quickPosItems = showAllItems ? inventory : inventory.slice(0, 6);
 
   // Get avatar initials and gradient colors
   const getPlayerGradient = (index: number) => {
@@ -286,9 +342,31 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
             </div>
           </div>
           
-          <button className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors">
-            <MoreVertical className="w-5 h-5 text-foreground" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors">
+                <MoreVertical className="w-5 h-5 text-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="z-[60] bg-background border-border min-w-[160px]">
+              <DropdownMenuItem onClick={() => {
+                const newMode = table.billingMode === 'hourly' ? 'per_minute' : table.billingMode === 'per_minute' ? 'per_frame' : 'hourly';
+                onUpdate({ ...table, billingMode: newMode });
+                toast.success(`Switched to ${newMode.replace('_', ' ')} billing`);
+              }} className="gap-2">
+                <Edit className="w-4 h-4" /> Switch Billing Mode
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowMatchHistory(true)} className="gap-2">
+                <Clock className="w-4 h-4" /> View History
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                onUpdate({ ...table, players: [], startTime: null, pausedTime: 0, items: [], totalBill: 0, frameCount: 0, status: 'free' as const });
+                onClose();
+              }} className="gap-2 text-destructive focus:text-destructive">
+                <Trash2 className="w-4 h-4" /> Reset Table
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -408,10 +486,10 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
               </button>
             )}
 
-            {/* Stop Button - Red */}
+            {/* Stop Button - Red - FIX: use handleEndSession instead of onEndSession */}
             {table.status !== 'free' && (
               <button
-                onClick={() => onEndSession({ ...table, totalBill })}
+                onClick={handleEndSession}
                 className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all active:scale-95"
                 style={{
                   background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
@@ -536,8 +614,8 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
               onClick={() => setShowAllItems(!showAllItems)}
               className="text-sm text-[hsl(var(--gold))] font-medium flex items-center gap-1 hover:opacity-80 transition-opacity"
             >
-              View All Items
-              <ChevronRight className="w-4 h-4" />
+              {showAllItems ? 'Show Less' : 'View All Items'}
+              <ChevronRight className={cn("w-4 h-4 transition-transform", showAllItems && "rotate-90")} />
             </button>
           </div>
 
@@ -558,11 +636,23 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
               <div className="space-y-1.5">
                 {table.items.map(item => (
                   <div key={item.id} className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleRemoveItem(item.id)}
+                      className="w-5 h-5 rounded bg-primary/20 flex items-center justify-center hover:bg-primary/40 transition-colors"
+                    >
+                      <Minus className="w-3 h-3 text-primary" />
+                    </button>
                     <div className="w-5 h-5 rounded bg-[hsl(var(--gold))]/20 flex items-center justify-center">
                       <span className="text-[10px] font-bold text-[hsl(var(--gold))]">{item.quantity}x</span>
                     </div>
                     <span className="flex-1 text-sm text-foreground">{item.name}</span>
                     <span className="text-sm text-[hsl(var(--gold))]">₹{item.price * item.quantity}</span>
+                    <button
+                      onClick={() => handleAddItem({ id: item.id, name: item.name, price: item.price, category: 'drinks' as const, icon: '' })}
+                      className="w-5 h-5 rounded bg-available/20 flex items-center justify-center hover:bg-available/40 transition-colors"
+                    >
+                      <Plus className="w-3 h-3 text-available" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -625,6 +715,12 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
               <span className="text-muted-foreground text-xs">F&B</span>
               <p className="text-foreground font-medium">₹{itemsTotal}</p>
             </div>
+            {gstAmount > 0 && (
+              <div>
+                <span className="text-muted-foreground text-xs">GST ({clubSettings.gstRate}%)</span>
+                <p className="text-foreground font-medium">₹{gstAmount}</p>
+              </div>
+            )}
           </div>
           <div className="text-right">
             <span className="text-muted-foreground text-xs">Grand Total</span>
@@ -682,13 +778,9 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
         />
       )}
 
-      {/* Payment Modal */}
-      {showPaymentModal && (
-        <PaymentModal
-          table={{ ...table, totalBill }}
-          onClose={() => setShowPaymentModal(false)}
-          onConfirm={handlePaymentConfirm}
-        />
+      {/* Match History Modal */}
+      {showMatchHistory && (
+        <MatchHistoryModal onClose={() => setShowMatchHistory(false)} />
       )}
     </div>
   );

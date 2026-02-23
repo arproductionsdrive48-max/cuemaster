@@ -9,7 +9,9 @@ export const useTimer = (startTime: Date | null, isPaused: boolean, pausedDurati
     const calculateElapsed = () => {
       const now = Date.now();
       const start = startTime.getTime();
-      return now - start - pausedDuration;
+      const raw = now - start - pausedDuration;
+      // Prevent negative time display
+      return Math.max(0, raw);
     };
 
     setElapsed(calculateElapsed());
@@ -22,7 +24,8 @@ export const useTimer = (startTime: Date | null, isPaused: boolean, pausedDurati
   }, [startTime, isPaused, pausedDuration]);
 
   const formatTime = useCallback((ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
+    const safe = Math.max(0, ms);
+    const totalSeconds = Math.floor(safe / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
@@ -34,7 +37,8 @@ export const useTimer = (startTime: Date | null, isPaused: boolean, pausedDurati
 };
 
 export const formatDuration = (ms: number) => {
-  const totalSeconds = Math.floor(ms / 1000);
+  const safe = Math.max(0, ms);
+  const totalSeconds = Math.floor(safe / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;

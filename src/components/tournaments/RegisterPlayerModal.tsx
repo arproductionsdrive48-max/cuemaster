@@ -45,16 +45,32 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
       return;
     }
     
-    // Add as guest member
-    const guestMember = addMember({
+    // Add as guest member in Supabase
+    addMember({
       name: newPlayer.name,
       phone: newPlayer.phone,
       email: '',
       membershipType: 'Guest',
       isGuest: true,
     });
+
+    // Create a local placeholder so we can register them immediately
+    const guestPlaceholder: Member = {
+      id: `guest-${Date.now()}`,
+      name: newPlayer.name,
+      phone: newPlayer.phone,
+      email: '',
+      avatar: newPlayer.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
+      membershipType: 'Guest',
+      creditBalance: 0,
+      lastVisit: new Date(),
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      isGuest: true,
+    };
     
-    setSelectedMembers(prev => [...prev, guestMember]);
+    setSelectedMembers(prev => [...prev, guestPlaceholder]);
     setNewPlayer({ name: '', phone: '' });
     setShowNewPlayer(false);
     toast.success(`Guest "${newPlayer.name}" added!`);
@@ -263,7 +279,7 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-background border-t border-border/50 p-4">
+        <div className="sticky bottom-0 bg-background border-t border-border/50 p-4 pb-24">
           <div className="flex items-center justify-between mb-3">
             <div>
               <span className="text-sm text-muted-foreground">Entry Fee</span>

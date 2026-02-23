@@ -1,18 +1,28 @@
+import { useState } from 'react';
 import { Member } from '@/types';
 import { X, Trophy, Target, TrendingUp, Calendar, IndianRupee, Star, MessageCircle, Edit3, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMembers } from '@/contexts/MembersContext';
 import { sendWhatsAppReminder } from '@/lib/whatsapp';
+import { format } from 'date-fns';
+import MatchHistoryModal from '@/components/tables/MatchHistoryModal';
+import EditMemberModal from '@/components/members/EditMemberModal';
 
 interface PlayerDetailModalProps {
-  member: Member & { winRate: number };
+  member: Member & { winRate: number; points?: number };
   rank: number;
   onClose: () => void;
 }
 
-const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) => {
-  const { clubSettings } = useMembers();
-  
+const PlayerDetailModal = ({ member: initialMember, rank, onClose }: PlayerDetailModalProps) => {
+  const { clubSettings, matchHistory, members } = useMembers();
+  const [showMatchHistory, setShowMatchHistory] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  // Get live member data (may have been updated)
+  const member = members.find(m => m.id === initialMember.id) ?? initialMember;
+  const winRate = member.gamesPlayed > 0 ? Math.round((member.wins / member.gamesPlayed) * 100) : 0;
+
   const handleWhatsAppReminder = () => {
     sendWhatsAppReminder(
       clubSettings.reminderTemplate,
@@ -20,14 +30,21 @@ const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) =>
       Math.abs(member.creditBalance)
     );
   };
-  // Generate fake recent matches
-  const recentMatches = [
-    { opponent: 'Rahul S.', result: 'won', score: '4-2', date: 'Today' },
-    { opponent: 'Vikram S.', result: 'lost', score: '3-4', date: 'Yesterday' },
-    { opponent: 'Arjun R.', result: 'won', score: '4-1', date: 'Dec 22' },
-    { opponent: 'Karan K.', result: 'won', score: '4-3', date: 'Dec 21' },
-    { opponent: 'Mohit S.', result: 'lost', score: '2-4', date: 'Dec 20' },
-  ];
+
+  // Get real recent matches from match history
+  const recentMatches = matchHistory
+    .filter(m => m.players.some(p => p.name === member.name))
+    .slice(0, 5)
+    .map(m => {
+      const playerResult = m.players.find(p => p.name === member.name);
+      const opponents = m.players.filter(p => p.name !== member.name).map(p => p.name);
+      return {
+        opponent: opponents.length > 0 ? opponents[0].split(' ')[0] + (opponents.length > 1 ? ` +${opponents.length - 1}` : '') : 'Solo',
+        result: playerResult?.result === 'win' ? 'won' : playerResult?.result === 'loss' ? 'lost' : 'draw',
+        date: format(m.date, 'MMM d'),
+        bill: m.totalBill,
+      };
+    });
 
   const getRankBadge = () => {
     if (rank === 1) return <div className="px-3 py-1 rounded-full bg-gold/20 text-gold text-xs font-bold">🏆 #1</div>;
@@ -45,10 +62,23 @@ const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) =>
     }
   };
 
+  if (showMatchHistory) {
+    return <MatchHistoryModal onClose={() => setShowMatchHistory(false)} filterPlayer={member.name} />;
+  }
+
+  if (showEditModal) {
+    return (
+      <EditMemberModal
+        member={member as Member}
+        onClose={() => setShowEditModal(false)}
+      />
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />
-      <div 
+      <div
         className="relative w-full max-w-md max-h-[85vh] overflow-hidden glass-card animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
@@ -70,12 +100,14 @@ const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) =>
                 <h2 className="text-xl font-bold truncate">{member.name}</h2>
                 {getRankBadge()}
               </div>
-              <div className="flex items-center gap-2">
-                <Star className={cn('w-4 h-4', getMembershipColor())} />
-                <span className={cn('text-sm font-medium', getMembershipColor())}>
-                  {member.membershipType} Member
-                </span>
-              </div>
+              {clubSettings.showMembershipBadge && (
+                <div className="flex items-center gap-2">
+                  <Star className={cn('w-4 h-4', getMembershipColor())} />
+                  <span className={cn('text-sm font-medium', getMembershipColor())}>
+                    {member.membershipType} Member
+                  </span>
+                </div>
+              )}
               <p className="text-sm text-muted-foreground mt-1">{member.phone}</p>
             </div>
           </div>
@@ -90,6 +122,22 @@ const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) =>
             </h3>
             <div className="grid grid-cols-3 gap-3">
               <div className="glass-card p-3 text-center">
+                <p className="text-2xl font-bold">{member.highestBreak || '—'}</p>
+                <p className="text-xs text-muted-foreground">Highest Break</p>
+              </div>
+              <div className="glass-card p-3 text-center">
+                <p className="text-2xl font-bold text-available">{winRate}%</p>
+                <p className="text-xs text-muted-foreground">Win Rate</p>
+              </div>
+              <div className="glass-card p-3 text-center">
+                <p className="text-2xl font-bold text-[hsl(var(--gold))]">#{rank}</p>
+                <p className="text-xs text-muted-foreground">Rank</p>
+              </div>
+            </div>
+
+            {/* W/L Record */}
+            <div className="grid grid-cols-4 gap-3 mt-3">
+              <div className="glass-card p-3 text-center">
                 <p className="text-2xl font-bold">{member.gamesPlayed}</p>
                 <p className="text-xs text-muted-foreground">Games</p>
               </div>
@@ -101,22 +149,25 @@ const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) =>
                 <p className="text-2xl font-bold text-primary">{member.losses}</p>
                 <p className="text-xs text-muted-foreground">Losses</p>
               </div>
+              <div className="glass-card p-3 text-center">
+                <p className="text-2xl font-bold text-[hsl(var(--gold))]">{initialMember.points ?? member.wins * 3}</p>
+                <p className="text-xs text-muted-foreground">Points</p>
+              </div>
             </div>
-            
-            {/* Win Rate Bar */}
+
+            {/* Points Display */}
             <div className="mt-4 p-3 glass-card">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium flex items-center gap-1">
-                  <TrendingUp className="w-4 h-4 text-available" />
-                  Win Rate
+                  <Star className="w-4 h-4 text-[hsl(var(--gold))]" />
+                  Points
                 </span>
-                <span className="text-lg font-bold text-available">{member.winRate}%</span>
+                <span className="text-lg font-bold text-[hsl(var(--gold))]">{initialMember.points ?? member.wins * 3}</span>
               </div>
-              <div className="progress-glass h-3">
-                <div 
-                  className="progress-fill h-full"
-                  style={{ width: `${member.winRate}%` }}
-                />
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>3 pts per win</span>
+                <span>•</span>
+                <span>Win Rate: {winRate}%</span>
               </div>
             </div>
           </div>
@@ -132,11 +183,11 @@ const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) =>
                 <p className="text-xs text-muted-foreground mb-1">Total Spent</p>
                 <p className="font-semibold flex items-center gap-1">
                   <IndianRupee className="w-3 h-3" />
-                  {(member.gamesPlayed * 180 + Math.floor(Math.random() * 5000)).toLocaleString()}
+                  {(member.gamesPlayed * 180).toLocaleString()}
                 </p>
               </div>
             </div>
-            
+
             {/* Credit Balance */}
             <div className={cn(
               'mt-3 p-3 rounded-xl',
@@ -162,43 +213,53 @@ const PlayerDetailModal = ({ member, rank, onClose }: PlayerDetailModalProps) =>
               <History className="w-4 h-4 text-primary" />
               Recent Matches
             </h3>
-            <div className="space-y-2">
-              {recentMatches.map((match, idx) => (
-                <div key={idx} className="flex items-center justify-between py-2 px-3 rounded-xl bg-secondary/50">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      'w-2 h-2 rounded-full',
-                      match.result === 'won' ? 'bg-available' : 'bg-primary'
-                    )} />
-                    <span className="text-sm">vs {match.opponent}</span>
+            {recentMatches.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No match history yet</p>
+            ) : (
+              <div className="space-y-2">
+                {recentMatches.map((match, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-2 px-3 rounded-xl bg-secondary/50">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        'w-2 h-2 rounded-full',
+                        match.result === 'won' ? 'bg-available' : match.result === 'draw' ? 'bg-[hsl(var(--gold))]' : 'bg-primary'
+                      )} />
+                      <span className="text-sm">vs {match.opponent}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={cn(
+                        'text-xs font-bold px-2 py-0.5 rounded',
+                        match.result === 'won' ? 'bg-available/20 text-available' : match.result === 'draw' ? 'bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]' : 'bg-primary/20 text-primary'
+                      )}>
+                        {match.result === 'won' ? 'W' : match.result === 'draw' ? 'D' : 'L'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{match.date}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={cn(
-                      'text-sm font-medium',
-                      match.result === 'won' ? 'text-available' : 'text-primary'
-                    )}>
-                      {match.score}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{match.date}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="p-4 border-t border-border/50 flex gap-3">
-          <button className="flex-1 py-3 rounded-xl bg-secondary text-foreground font-semibold flex items-center justify-center gap-2">
+          <button
+            onClick={() => setShowMatchHistory(true)}
+            className="flex-1 py-3 rounded-xl bg-secondary text-foreground font-semibold flex items-center justify-center gap-2 hover:bg-accent/30 transition-colors"
+          >
             <History className="w-4 h-4" />
             View History
           </button>
-          <button className="flex-1 py-3 rounded-xl bg-secondary text-foreground font-semibold flex items-center justify-center gap-2">
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="flex-1 py-3 rounded-xl bg-secondary text-foreground font-semibold flex items-center justify-center gap-2 hover:bg-accent/30 transition-colors"
+          >
             <Edit3 className="w-4 h-4" />
             Edit Profile
           </button>
           {member.creditBalance < 0 && (
-            <button 
+            <button
               onClick={handleWhatsAppReminder}
               className="py-3 px-4 rounded-xl bg-[#25D366] text-white font-semibold flex items-center justify-center gap-2 hover:bg-[#20BD5A] transition-colors"
             >
