@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Tournament, Member } from '@/types';
 import { useMembers } from '@/contexts/MembersContext';
-import { X, Search, UserPlus, Check, Trophy } from 'lucide-react';
+import { X, Search, UserPlus, Check, Trophy, Share2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -29,11 +29,18 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
     m.phone.includes(searchQuery)
   );
 
+  const remainingCapacity = tournament.maxPlayers - tournament.registeredPlayers.length;
+  const isAtCapacity = selectedMembers.length >= remainingCapacity;
+
   const handleToggleMember = (member: Member) => {
     setSelectedMembers(prev => {
       const isSelected = prev.some(m => m.id === member.id);
       if (isSelected) {
         return prev.filter(m => m.id !== member.id);
+      }
+      if (prev.length >= remainingCapacity) {
+        toast.error(`Cannot select more than ${remainingCapacity} additional players (Limit: ${tournament.maxPlayers})`);
+        return prev;
       }
       return [...prev, member];
     });
@@ -45,12 +52,19 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
       return;
     }
     
+    if (selectedMembers.length >= remainingCapacity) {
+      toast.error(`Tournament is full (Limit: ${tournament.maxPlayers})`);
+      return;
+    }
+
     // Add as guest member in Supabase
     addMember({
       name: newPlayer.name,
       phone: newPlayer.phone,
       email: '',
       membershipType: 'Guest',
+      tier: 'Regular',
+      points: 0,
       isGuest: true,
     });
 
@@ -67,6 +81,8 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
       gamesPlayed: 0,
       wins: 0,
       losses: 0,
+      tier: 'Regular',
+      points: 0,
       isGuest: true,
     };
     
@@ -76,9 +92,19 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
     toast.success(`Guest "${newPlayer.name}" added!`);
   };
 
+  const handleWhatsAppInvite = () => {
+    const text = `🏆 Join "${tournament.name}"\n📅 Date: ${tournament.date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric'})}\n📍 ${tournament.location}\n💰 Entry: ₹${tournament.entryFee}\n\nTap to send us a message and register!`;
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
   const handleRegister = () => {
     if (selectedMembers.length === 0) {
       toast.error('Please select at least one player');
+      return;
+    }
+    if (selectedMembers.length > remainingCapacity) {
+      toast.error(`Limit exceeded: Tournament only has ${remainingCapacity} spots left`);
       return;
     }
     onRegister(selectedMembers);
@@ -172,14 +198,24 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
         <div className="overflow-y-auto max-h-[45vh] p-4">
           {!showNewPlayer ? (
             <>
-              {/* Add New Player Button */}
-              <button
-                onClick={() => setShowNewPlayer(true)}
-                className="w-full p-4 mb-4 rounded-xl border-2 border-dashed border-border/50 flex items-center justify-center gap-2 text-muted-foreground hover:border-[hsl(var(--gold))]/50 hover:text-[hsl(var(--gold))] transition-colors"
-              >
-                <UserPlus className="w-5 h-5" />
-                + Add New Player (Guest)
-              </button>
+              {/* Quick Action Buttons */}
+              <div className="flex gap-3 mb-4">
+                <button
+                  onClick={() => setShowNewPlayer(true)}
+                  className="flex-1 py-4 px-2 rounded-xl border-2 border-dashed border-border/50 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-[hsl(var(--gold))]/50 hover:text-[hsl(var(--gold))] transition-colors"
+                >
+                  <UserPlus className="w-5 h-5 mx-auto" />
+                  <span className="text-xs font-semibold">New Guest</span>
+                </button>
+                
+                <button
+                  onClick={handleWhatsAppInvite}
+                  className="flex-1 py-4 px-2 rounded-xl border-2 border-dashed border-border/50 flex flex-col items-center justify-center gap-2 text-[#25D366]/70 hover:border-[#25D366]/50 hover:text-[#25D366] transition-colors"
+                >
+                  <Share2 className="w-5 h-5 mx-auto" />
+                  <span className="text-xs font-semibold">WA Invite</span>
+                </button>
+              </div>
 
               {/* Members List */}
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
@@ -220,9 +256,13 @@ const RegisterPlayerModal = ({ tournament, onClose, onRegister }: RegisterPlayer
                             {member.gamesPlayed} games played • {Math.round((member.wins / (member.gamesPlayed || 1)) * 100)}% win rate
                           </p>
                         </div>
-                        {isSelected && (
+                        {isSelected ? (
                           <div className="w-6 h-6 rounded-full bg-[hsl(var(--gold))] flex items-center justify-center">
                             <Check className="w-4 h-4 text-[hsl(var(--gold-foreground))]" />
+                          </div>
+                        ) : isAtCapacity && (
+                          <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center opacity-50">
+                            <Check className="w-4 h-4 text-muted-foreground" />
                           </div>
                         )}
                       </button>

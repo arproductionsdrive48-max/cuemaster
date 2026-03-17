@@ -31,6 +31,10 @@ export interface Member {
   name: string;
   avatar: string;
   membershipType: MembershipType;
+  tier: 'Gold' | 'Silver' | 'Regular';
+  points: number;
+  cpp_points?: number;
+  loyalty_points?: number;
   creditBalance: number;
   lastVisit: Date;
   gamesPlayed: number;
@@ -125,11 +129,14 @@ export interface Booking {
   id: string;
   tableNumber: number;
   customerName: string;
+  phone?: string;
   date: Date;
   startTime: string;
   endTime: string;
-  status: 'confirmed' | 'pending' | 'cancelled';
+  status: 'confirmed' | 'pending' | 'cancelled' | 'waitlisted';
   advancePayment?: number;
+  discount?: number;
+  note?: string;
 }
 
 export interface ClubSettings {
@@ -141,6 +148,16 @@ export interface ClubSettings {
   showMembershipBadge: boolean;
   clubName: string;
   clubLogo: string;
+  clubDescription?: string;
+  clubAddress?: string;
+  clubPhone?: string;
+  notificationNumbers?: string[];
+  publicPhotos?: string[];
+  brandingColors?: {
+    primary: string;
+    secondary: string;
+    accent: string;
+  };
   gstEnabled: boolean;
   gstRate: number;
   timeFormat?: '12h' | '24h';
@@ -164,6 +181,7 @@ export interface Tournament {
   name: string;
   type: TournamentType;
   date: Date;
+  endDate?: Date;
   startTime?: string; // e.g. "14:00"
   location: string;
   entryFee: number;
@@ -171,12 +189,14 @@ export interface Tournament {
   prizeDistribution?: PrizeDistribution[];
   maxPlayers: number;
   registeredPlayers: string[];
+  waitlist?: string[];
   status: TournamentStatus;
   description?: string;
   tables?: number[];
   image?: string;
   winner?: string; // tournament winner name
   trophies?: Record<string, string[]>; // player -> trophy names
+  bracket?: any; // JSON representation of matches
 }
 
 export interface TournamentBracketMatch {
@@ -188,7 +208,7 @@ export interface TournamentBracketMatch {
   score1: number;
   score2: number;
   bestOf: number;
-  tableNumber: number;
+  tableNumber?: number;
   status: 'pending' | 'live' | 'completed';
   winner?: string;
   liveLink?: string;

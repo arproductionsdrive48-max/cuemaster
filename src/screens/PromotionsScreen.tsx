@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import Header from '@/components/layout/Header';
-import { Megaphone, Send, Plus, Users, Clock, X, WifiOff, Save, FileText, Trash2 } from 'lucide-react';
+import { Megaphone, Send, Plus, Users, Clock, X, WifiOff, Save, FileText, Trash2, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useMembers } from '@/contexts/MembersContext';
+import { generatePromotionTexts } from '@/services/smartGenerator';
 import {
   usePromotions, useSendPromotion,
   usePromotionTemplates, useSavePromotionTemplate, useDeletePromotionTemplate,
@@ -14,6 +15,7 @@ const PromotionsScreen = () => {
   const { clubId, isOnline } = useMembers();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: '', message: '', audience: 'all', channel: 'sms' });
+  const [promoSuggestions, setPromoSuggestions] = useState<string[]>([]);
 
   const { data: promotions = [], isLoading } = usePromotions(isOnline ? clubId : null);
   const { mutate: sbSend, isPending } = useSendPromotion(isOnline ? clubId : null);
@@ -48,6 +50,12 @@ const PromotionsScreen = () => {
       audience: audienceLabel(form.audience),
       channel: form.channel.toUpperCase(),
     });
+  };
+
+  const handleSuggestPromoText = (type: 'weekend' | 'tournament' | 'happy_hour' | 'member' | 'general') => {
+    const clubName = 'our club';
+    const texts = generatePromotionTexts(clubName, type);
+    setPromoSuggestions(texts);
   };
 
   const loadTemplate = (template: typeof templates[0]) => {
@@ -136,8 +144,36 @@ const PromotionsScreen = () => {
               <input type="text" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="e.g., Weekend Special" className="w-full px-4 py-3 rounded-xl bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 text-sm" />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Message</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-muted-foreground">Message</label>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">Suggest:</span>
+                  {(['weekend', 'tournament', 'happy_hour', 'member'] as const).map(type => (
+                    <button
+                      key={type}
+                      onClick={() => handleSuggestPromoText(type)}
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-[hsl(var(--gold))]/10 text-[hsl(var(--gold))] hover:bg-[hsl(var(--gold))]/25 transition-colors capitalize"
+                    >
+                      {type.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <textarea value={form.message} onChange={e => setForm(p => ({ ...p, message: e.target.value }))} placeholder="Write your promotion message..." rows={3} className="w-full px-4 py-3 rounded-xl bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 text-sm resize-none" />
+              {promoSuggestions.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-xs text-gray-500">Tap a suggestion to use it:</p>
+                  {promoSuggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setForm(p => ({ ...p, message: s })); setPromoSuggestions([]); }}
+                      className="w-full text-left p-2.5 rounded-xl bg-white/5 border border-white/8 text-xs text-gray-300 hover:bg-white/10 transition-colors"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

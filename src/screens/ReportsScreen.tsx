@@ -1,322 +1,430 @@
 import { useState, useMemo } from 'react';
+import { format, subDays, startOfMonth, endOfMonth, isWithinInterval, startOfYear, eachMonthOfInterval } from 'date-fns';
+import { useMatchHistory, useClubId, useBookings, useTournaments } from '@/hooks/useSupabaseQuery';
 import Header from '@/components/layout/Header';
-import { useMembers } from '@/contexts/MembersContext';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { TrendingUp, IndianRupee, CreditCard, Utensils, Clock, Calendar, Download, BarChart3, Globe, WifiOff } from 'lucide-react';
+import { BarChart3, TrendingUp, Calendar, Download, DollarSign, Clock, ArrowUpRight, BookOpen, Trophy, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, isAfter, isToday, startOfWeek, startOfMonth, isSameDay, subDays, getDay } from 'date-fns';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar as CalendarPicker } from '@/components/ui/calendar';
-import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import AnalyticsDashboard from '@/components/reports/AnalyticsDashboard';
+import React, { Suspense, lazy } from 'react';
 
-const salesBreakdown = [
-  { name: 'Table', value: 65, color: 'hsl(0, 84%, 60%)' },
-  { name: 'Food', value: 25, color: 'hsl(142, 76%, 45%)' },
-  { name: 'Drinks', value: 10, color: 'hsl(45, 93%, 58%)' },
-];
+const ReportsRevenueChart = lazy(() => import('@/components/reports/ReportsRevenueChart'));
 
-type DateFilter = 'today' | 'week' | 'month' | 'all' | 'custom';
-
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+type RangeType = 'predefined' | 'custom' | 'month-select';
 
 const ReportsScreen = () => {
-  const { matchHistory, members, isOnline } = useMembers();
-  const [activeSection, setActiveSection] = useState<'revenue' | 'analytics'>('revenue');
-  const [dateFilter, setDateFilter] = useState<DateFilter>('week');
-  const [customDate, setCustomDate] = useState<Date | undefined>(undefined);
+  const { clubId } = useClubId();
+  const { data: matches = [] } = useMatchHistory(clubId || null);
+  const { data: bookings = [] } = useBookings(clubId || null);
+  const { data: tournaments = [] } = useTournaments(clubId || null);
+  
+  const [rangeType, setRangeType] = useState<RangeType>('predefined');
+  const [dateRange, setDateRange] = useState<'today' | '7d' | '30d'>('7d');
+  
+  // Custom Range State
+  const [customStart, setCustomStart] = useState<string>(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
+  const [customEnd, setCustomEnd] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  
+  // Month Select State
+  const [selectedMonth, setSelectedMonth] = useState<Date>(startOfMonth(new Date()));
 
-  const now = new Date();
-  const getFilteredMatches = () => {
-    switch (dateFilter) {
-      case 'today': return matchHistory.filter(m => isToday(m.date));
-      case 'week': {
-        const start = startOfWeek(now);
-        return matchHistory.filter(m => isAfter(m.date, start));
+  const months = useMemo(() => {
+    const start = startOfYear(new Date());
+    const end = endOfMonth(new Date());
+    return eachMonthOfInterval({ start, end }).reverse();
+  }, []);
+
+  // Compute actual start/end for filtering
+  const filterRange = useMemo(() => {
+    const now = new Date();
+    let start = new Date();
+    let end = endOfMonth(now);
+
+    if (rangeType === 'predefined') {
+      switch (dateRange) {
+        case 'today':
+          start.setHours(0, 0, 0, 0);
+          break;
+        case '7d':
+          start = subDays(now, 7);
+          break;
+        case '30d':
+          start = subDays(now, 30);
+          break;
       }
-      case 'month': {
-        const start = startOfMonth(now);
-        return matchHistory.filter(m => isAfter(m.date, start));
-      }
-      case 'custom': {
-        if (!customDate) return matchHistory;
-        return matchHistory.filter(m => isSameDay(m.date, customDate));
-      }
-      default: return matchHistory;
+    } else if (rangeType === 'custom') {
+      start = new Date(customStart);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(customEnd);
+      end.setHours(23, 59, 59, 999);
+    } else if (rangeType === 'month-select') {
+      start = startOfMonth(selectedMonth);
+      end = endOfMonth(selectedMonth);
     }
+
+    return { start, end };
+  }, [rangeType, dateRange, customStart, customEnd, selectedMonth]);
+
+  // Filter Data
+  const filteredData = useMemo(() => {
+    const { start, end } = filterRange;
+    return {
+      matches: matches.filter(m => isWithinInterval(new Date(m.date), { start, end })),
+      bookings: bookings.filter(b => isWithinInterval(new Date(b.date), { start, end })),
+      tournaments: tournaments.filter(t => isWithinInterval(new Date(t.date), { start, end }))
+    };
+  }, [matches, bookings, tournaments, filterRange]);
+
+  // Aggregate Stats
+  const stats = useMemo(() => {
+    const { matches: fMatches, bookings: fBookings, tournaments: fTournaments } = filteredData;
+    
+    const totalRevenue = fMatches.reduce((sum, m) => sum + m.totalBill, 0);
+    const totalDurationMs = fMatches.reduce((sum, m) => sum + m.duration, 0);
+    const totalMatches = fMatches.length;
+    const totalBookings = fBookings.length;
+    const totalTournaments = fTournaments.length;
+    
+    // Revenue by Day
+    const revByDay = fMatches.reduce((acc, match) => {
+      const day = format(new Date(match.date), 'MMM dd');
+      acc[day] = (acc[day] || 0) + match.totalBill;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const chartData = Object.entries(revByDay)
+      .map(([name, revenue]) => ({ name, revenue }))
+      .sort((a, b) => new Date(a.name).getTime() - new Date(b.name).getTime());
+
+    const tableActivity = fMatches.reduce((acc, m) => {
+      const table = `Table ${String(m.tableNumber).padStart(2, '0')}`;
+      acc[table] = (acc[table] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const avgDurationTotal = totalMatches ? Math.round((totalDurationMs / 60000) / totalMatches) : 0;
+
+    return { 
+      totalRevenue, 
+      totalMatches, 
+      totalBookings,
+      totalTournaments,
+      avgDuration: avgDurationTotal,
+      chartData,
+      tableActivity: Object.entries(tableActivity).sort((a, b) => b[1] - a[1]).slice(0, 4)
+    };
+  }, [filteredData]);
+
+  const handleExport = () => {
+    if (!filteredData.matches.length && !filteredData.bookings.length && !filteredData.tournaments.length) {
+      return toast.error('No data to export');
+    }
+    
+    const { matches: fMatches, bookings: fBookings, tournaments: fTournaments } = filteredData;
+    const { start, end } = filterRange;
+
+    let csvContent = `CUE MASTER REPORT\n`;
+    csvContent += `Period: ${format(start, 'yyyy-MM-dd')} to ${format(end, 'yyyy-MM-dd')}\n`;
+    csvContent += `Generated at: ${format(new Date(), 'yyyy-MM-dd HH:mm')}\n\n`;
+
+    csvContent += `SUMMARY\n`;
+    csvContent += `Total Revenue,₹${stats.totalRevenue}\n`;
+    csvContent += `Total Matches,${stats.totalMatches}\n`;
+    csvContent += `Avg Match Duration,${stats.avgDuration} min\n`;
+    csvContent += `Total Bookings,${stats.totalBookings}\n`;
+    csvContent += `Tournaments Held,${stats.totalTournaments}\n\n`;
+
+    if (fMatches.length > 0) {
+      csvContent += `MATCH DETAILS\n`;
+      csvContent += `Date,Table,Duration (min),Total Bill,Split Count\n`;
+      fMatches.forEach(m => {
+        csvContent += `${format(new Date(m.date), 'yyyy-MM-dd HH:mm')},${m.tableNumber},${Math.round(m.duration/60000)},${m.totalBill},${m.splitCount || 1}\n`;
+      });
+      csvContent += `\n`;
+    }
+
+    if (fBookings.length > 0) {
+      csvContent += `BOOKING DETAILS\n`;
+      csvContent += `Date,Customer,Time,Status,Note\n`;
+      fBookings.forEach(b => {
+        csvContent += `${format(new Date(b.date), 'yyyy-MM-dd')},"${b.customerName}",${b.startTime}-${b.endTime},${b.status},"${b.note || ''}"\n`;
+      });
+      csvContent += `\n`;
+    }
+
+    if (fTournaments.length > 0) {
+      csvContent += `TOURNAMENT DETAILS\n`;
+      csvContent += `Name,Date,Type,Entry Fee,Winner\n`;
+      fTournaments.forEach(t => {
+        csvContent += `"${t.name}",${format(new Date(t.date), 'yyyy-MM-dd')},${t.type},${t.entryFee},${t.winner || 'TBD'}\n`;
+      });
+      csvContent += `\n`;
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cuemaster-report-${format(start, 'yyyyMMdd')}-to-${format(end, 'yyyyMMdd')}.csv`;
+    a.click();
+    toast.success('Report downloaded with full details');
   };
 
-  const filtered = getFilteredMatches();
-
-  const dailyRevenue = useMemo(() => {
-    return DAYS.map((day, idx) => {
-      const targetDate = subDays(new Date(), (getDay(new Date()) - idx + 7) % 7);
-      const amount = matchHistory
-        .filter(m => isSameDay(m.date, targetDate))
-        .reduce((sum, m) => sum + m.totalBill, 0);
-      return { day, amount };
-    });
-  }, [matchHistory]);
-
-  const totalRevenue = filtered.reduce((sum, m) => sum + m.totalBill, 0);
-  const nonZeroDays = dailyRevenue.filter(d => d.amount > 0).length || 1;
-  const avgDaily = Math.round(dailyRevenue.reduce((s, d) => s + d.amount, 0) / nonZeroDays);
-  const pendingCredits = members.filter(m => m.creditBalance < 0).reduce((sum, m) => sum + Math.abs(m.creditBalance), 0);
-
-  const formatDuration = (ms: number) => {
-    const h = Math.floor(ms / 3600000);
-    const m = Math.floor((ms % 3600000) / 60000);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-  };
-
-  const handleExport = async () => {
-    if (filtered.length === 0) {
-      toast.error('No data to export for the selected period');
-      return;
-    }
-    try {
-      const XLSX = await import('xlsx');
-      const data = filtered.map(match => ({
-        'Date': format(match.date, 'yyyy-MM-dd'),
-        'Start Time': match.sessionStartTime ? format(match.sessionStartTime, 'hh:mm a') : '—',
-        'End Time': match.sessionEndTime ? format(match.sessionEndTime, 'hh:mm a') : format(match.date, 'hh:mm a'),
-        'Table': match.tableNumber,
-        'Players': match.players.map(p => `${p.name} (${p.result})`).join(', '),
-        'Duration': formatDuration(match.duration),
-        'Billing Mode': match.billingMode.replace('_', ' '),
-        'Total Bill (₹)': match.totalBill,
-        'Payment Method': (match as any).paymentMethod || 'N/A',
-        'Split': (match as any).splitCount || 1,
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Match History');
-      XLSX.writeFile(wb, `SnookOS_Report_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
-      toast.success('Report exported successfully!');
-    } catch {
-      toast.error('Export failed. Please try again.');
-    }
-  };
+  const KPIs = [
+    { label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+    { label: 'Total Matches', value: stats.totalMatches.toLocaleString(), icon: BarChart3, color: 'text-blue-400', bg: 'bg-blue-400/10' },
+    { label: 'Avg Duration', value: `${stats.avgDuration}m`, icon: Clock, color: 'text-purple-400', bg: 'bg-purple-400/10' },
+    { label: 'Bookings', value: stats.totalBookings.toLocaleString(), icon: BookOpen, color: 'text-orange-400', bg: 'bg-orange-400/10' },
+    { label: 'Tournaments', value: stats.totalTournaments.toLocaleString(), icon: Trophy, color: 'text-[hsl(var(--gold))]', bg: 'bg-[hsl(var(--gold))]/10' },
+  ];
 
   return (
     <div className="min-h-screen pb-24">
-      <Header title="Reports" />
+      <Header title="Reports & Analytics" />
 
-      {!isOnline && (
-        <div className="mx-4 mb-4 p-3 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center gap-3">
-          <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
-          <p className="text-sm font-medium text-destructive">Offline – report data unavailable</p>
+      <div className="px-4 mt-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
+        {/* Controls Section */}
+        <div className="space-y-4">
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center glass-card p-4 rounded-3xl">
+            <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+              {/* Range Type Selector */}
+              <div className="flex p-1 bg-secondary/50 rounded-2xl gap-1">
+                <button
+                  onClick={() => setRangeType('predefined')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase tracking-widest",
+                    rangeType === 'predefined' ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-gray-300"
+                  )}
+                >
+                  Quick
+                </button>
+                <button
+                  onClick={() => setRangeType('month-select')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase tracking-widest",
+                    rangeType === 'month-select' ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-gray-300"
+                  )}
+                >
+                  Month
+                </button>
+                <button
+                  onClick={() => setRangeType('custom')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase tracking-widest",
+                    rangeType === 'custom' ? "bg-white/10 text-white shadow-sm" : "text-gray-500 hover:text-gray-300"
+                  )}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {/* Range Sub-Controls */}
+              <div className="flex-1 min-w-[200px]">
+                {rangeType === 'predefined' && (
+                  <div className="flex items-center gap-2 p-1 bg-secondary/30 rounded-2xl">
+                    {['today', '7d', '30d'].map(range => (
+                      <button
+                        key={range}
+                        onClick={() => setDateRange(range as any)}
+                        className={cn(
+                          "flex-1 px-4 py-2 rounded-xl text-xs font-bold transition-all capitalize",
+                          dateRange === range ? "bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]" : "text-gray-500 hover:text-gray-300"
+                        )}
+                      >
+                        {range}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {rangeType === 'month-select' && (
+                  <select
+                    value={selectedMonth.toISOString()}
+                    onChange={(e) => setSelectedMonth(new Date(e.target.value))}
+                    className="w-full bg-secondary/30 border border-white/5 rounded-2xl px-4 py-2.5 text-sm font-bold text-white outline-none focus:border-[hsl(var(--gold))]/30 transition-all appearance-none cursor-pointer"
+                  >
+                    {months.map((m) => (
+                      <option key={m.toISOString()} value={m.toISOString()} className="bg-[#121212]">
+                        {format(m, 'MMMM yyyy')}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {rangeType === 'custom' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={customStart}
+                      onChange={(e) => setCustomStart(e.target.value)}
+                      className="flex-1 bg-secondary/30 border border-white/5 rounded-2xl px-4 py-2.5 text-xs font-bold text-white outline-none focus:border-[hsl(var(--gold))]/30 transition-all"
+                    />
+                    <ChevronRight className="w-4 h-4 text-gray-600" />
+                    <input
+                      type="date"
+                      value={customEnd}
+                      onChange={(e) => setCustomEnd(e.target.value)}
+                      className="flex-1 bg-secondary/30 border border-white/5 rounded-2xl px-4 py-2.5 text-xs font-bold text-white outline-none focus:border-[hsl(var(--gold))]/30 transition-all"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button 
+              onClick={handleExport}
+              className="w-full md:w-auto px-6 py-3 rounded-2xl bg-[hsl(var(--gold))] text-black font-black flex items-center justify-center gap-2 hover:bg-[hsl(var(--gold))]/90 transition-all active:scale-95 shadow-lg shadow-[hsl(var(--gold))]/10"
+            >
+              <Download className="w-4 h-4" />
+              EXPORT CSV
+            </button>
+          </div>
+          
+          <div className="flex items-center gap-2 px-6 py-2 text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em]">
+            <CalendarDays className="w-3 h-3" />
+            Active Period: {format(filterRange.start, 'MMM dd, yyyy')} — {format(filterRange.end, 'MMM dd, yyyy')}
+          </div>
         </div>
-      )}
 
-      {/* Section Tabs */}
-      <div className="px-4 mb-4">
-        <div className="flex gap-2 p-1 rounded-2xl bg-secondary/50">
-          <button onClick={() => setActiveSection('revenue')} className={cn(
-            'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all',
-            activeSection === 'revenue' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
-          )}>
-            <BarChart3 className="w-4 h-4" /> Revenue
-          </button>
-          <button onClick={() => setActiveSection('analytics')} className={cn(
-            'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all',
-            activeSection === 'analytics' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
-          )}>
-            <Globe className="w-4 h-4" /> Analytics
-          </button>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {KPIs.map((kpi, idx) => (
+            <div key={idx} className="glass-card p-5 rounded-3xl relative overflow-hidden group">
+              <div className="flex items-center justify-between mb-4">
+                <div className={cn("p-2.5 rounded-2xl", kpi.bg)}>
+                  <kpi.icon className={cn("w-5 h-5", kpi.color)} />
+                </div>
+              </div>
+              <p className="text-[10px] sm:text-xs font-bold text-gray-400 mb-1 uppercase tracking-widest">{kpi.label}</p>
+              <h3 className="text-xl sm:text-2xl font-black tracking-tight">{kpi.value}</h3>
+              <div className={cn("absolute -bottom-10 -right-10 w-24 h-24 rounded-full blur-3xl opacity-10 group-hover:opacity-20 transition-opacity", kpi.bg)} />
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 glass-card p-6 rounded-3xl min-h-[400px]">
+            <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-400" />
+              Revenue Trend
+            </h3>
+            <div className="h-[300px] w-full">
+              {stats.chartData.length > 0 ? (
+                <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-sm text-gray-500 animate-pulse">Loading Chart...</div>}>
+                  <ReportsRevenueChart data={stats.chartData} />
+                </Suspense>
+              ) : (
+                <div className="w-full h-[300px] flex flex-col items-center justify-center text-gray-500">
+                  <BarChart3 className="w-12 h-12 mb-3 opacity-20" />
+                  <p>No revenue data for this period</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="glass-card p-6 rounded-3xl min-h-[400px]">
+            <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-blue-400" />
+              Most Active Tables
+            </h3>
+            <div className="space-y-4">
+              {stats.tableActivity.map(([table, count], i) => (
+                <div key={table} className="bg-secondary/30 p-4 rounded-2xl flex items-center justify-between group hover:bg-white/5 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold text-sm">
+                      {i + 1}
+                    </div>
+                    <span className="font-medium text-gray-200">{table}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold">{count}</p>
+                    <p className="text-xs text-gray-500">matches</p>
+                  </div>
+                </div>
+              ))}
+              {stats.tableActivity.length === 0 && (
+                <div className="text-center py-10 text-gray-500">
+                  <p>No table activity recorded</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Match History List */}
+        <div className="glass-card rounded-3xl overflow-hidden">
+          <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Clock className="w-5 h-5 text-purple-400" />
+              Detailed Match History
+            </h3>
+            <span className="text-[10px] font-black bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full uppercase tracking-widest">
+              {filteredData.matches.length} Matches Found
+            </span>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-white/[0.01]">
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Date & Time</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Table</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Players</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Duration</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-right">Total Bill</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredData.matches.slice(0, 50).map((match) => (
+                  <tr key={match.id} className="hover:bg-white/[0.02] transition-colors group">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-bold text-white mb-0.5">{format(new Date(match.date), 'MMM dd, yyyy')}</div>
+                      <div className="text-[10px] text-gray-500 font-medium uppercase">{format(new Date(match.date), 'hh:mm a')}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center font-black text-xs border border-white/5 group-hover:border-white/10 transition-all">
+                        {match.tableNumber}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        {match.players.map((p, idx) => (
+                          <span key={idx} className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-md border",
+                            p.result === 'win' 
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                              : "bg-white/5 text-gray-400 border-white/5"
+                          )}>
+                            {p.name}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="text-sm font-black text-white">{Math.round(match.duration / 60000)}m</div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="text-sm font-black text-[hsl(var(--gold))]">₹{match.totalBill.toLocaleString()}</div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredData.matches.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-20 text-center text-gray-500 italic text-sm">
+                      No matches recorded for this period
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {filteredData.matches.length > 50 && (
+            <div className="p-4 bg-white/[0.01] text-center border-t border-white/5">
+              <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">
+                Showing top 50 matches — Use CSV export for full history
+              </p>
+            </div>
+          )}
         </div>
       </div>
-
-      {activeSection === 'analytics' ? (
-        <AnalyticsDashboard />
-      ) : (
-        <>
-          <div className="px-4 mb-4">
-            <div className="flex gap-2 flex-wrap">
-              {([
-                { id: 'today', label: 'Today' }, { id: 'week', label: 'This Week' },
-                { id: 'month', label: 'This Month' }, { id: 'all', label: 'All Time' },
-              ] as const).map(f => (
-                <button key={f.id} onClick={() => setDateFilter(f.id)} className={cn(
-                  'flex-1 px-3 py-2 rounded-xl text-xs font-medium transition-all',
-                  dateFilter === f.id ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
-                )}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 mt-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className={cn(
-                      'flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium h-auto',
-                      dateFilter === 'custom'
-                        ? 'bg-[hsl(var(--gold))] text-black hover:bg-[hsl(var(--gold))]/90'
-                        : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-                    )}
-                  >
-                    <Calendar className="w-3.5 h-3.5" />
-                    {dateFilter === 'custom' && customDate ? format(customDate, 'MMM d, yyyy') : 'Pick Date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 z-[60] bg-background border-border" align="start">
-                  <CalendarPicker
-                    mode="single"
-                    selected={customDate}
-                    onSelect={(date) => {
-                      setCustomDate(date);
-                      setDateFilter('custom');
-                    }}
-                    initialFocus
-                    className="p-3 pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
-              <Button
-                variant="ghost"
-                onClick={handleExport}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium h-auto bg-available/20 text-available hover:bg-available/30"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export Excel
-              </Button>
-            </div>
-          </div>
-
-          {/* Summary Cards */}
-          <div className="px-4 mb-6">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="glass-card p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-xl bg-available/20 flex items-center justify-center"><TrendingUp className="w-4 h-4 text-available" /></div>
-                  <span className="text-sm text-muted-foreground">Revenue</span>
-                </div>
-                <div className="flex items-center gap-1"><IndianRupee className="w-5 h-5" /><span className="text-2xl font-bold">{totalRevenue.toLocaleString()}</span></div>
-                <p className="text-xs text-muted-foreground mt-1">{filtered.length} sessions</p>
-              </div>
-              <div className="glass-card p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center"><Clock className="w-4 h-4 text-muted-foreground" /></div>
-                  <span className="text-sm text-muted-foreground">Avg Daily</span>
-                </div>
-                <div className="flex items-center gap-1"><IndianRupee className="w-5 h-5" /><span className="text-2xl font-bold">{avgDaily.toLocaleString()}</span></div>
-              </div>
-              <div className="glass-card p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center"><CreditCard className="w-4 h-4 text-primary" /></div>
-                  <span className="text-sm text-muted-foreground">Pending</span>
-                </div>
-                <div className="flex items-center gap-1 text-primary"><IndianRupee className="w-5 h-5" /><span className="text-2xl font-bold">{pendingCredits.toLocaleString()}</span></div>
-                <p className="text-xs text-muted-foreground mt-1">{members.filter(m => m.creditBalance < 0).length} members</p>
-              </div>
-              <div className="glass-card p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-xl bg-[hsl(var(--gold))]/20 flex items-center justify-center"><Utensils className="w-4 h-4 text-[hsl(var(--gold))]" /></div>
-                  <span className="text-sm text-muted-foreground">F&B Sales</span>
-                </div>
-                <div className="flex items-center gap-1"><IndianRupee className="w-5 h-5" /><span className="text-2xl font-bold">—</span></div>
-                <p className="text-xs text-muted-foreground mt-1">Track via inventory</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Daily Revenue Chart */}
-          <div className="px-4 mb-6">
-            <div className="glass-card p-4">
-              <h3 className="font-semibold mb-4">Daily Revenue (This Week)</h3>
-              {matchHistory.length === 0 ? (
-                <div className="h-32 flex items-center justify-center">
-                  <p className="text-sm text-muted-foreground">No session data yet</p>
-                </div>
-              ) : (
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={dailyRevenue}>
-                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: 'hsl(0 0% 55%)', fontSize: 12 }} />
-                      <YAxis hide />
-                      <Bar dataKey="amount" fill="hsl(0 84% 60%)" radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Sales Breakdown */}
-          <div className="px-4 mb-6">
-            <div className="glass-card p-4">
-              <h3 className="font-semibold mb-4">Sales Breakdown</h3>
-              <div className="flex items-center gap-6">
-                <div className="w-32 h-32">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={salesBreakdown} cx="50%" cy="50%" innerRadius={35} outerRadius={55} dataKey="value" strokeWidth={0}>
-                        {salesBreakdown.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} />))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex-1 space-y-3">
-                  {salesBreakdown.map(item => (
-                    <div key={item.name} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                        <span className="text-sm">{item.name}</span>
-                      </div>
-                      <span className="font-semibold">{item.value}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Match History */}
-          <div className="px-4 mb-6">
-            <div className="glass-card p-4">
-              <h3 className="font-semibold mb-4 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-[hsl(var(--gold))]" />
-                Match History ({filtered.length})
-              </h3>
-              {filtered.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  {isOnline ? 'No matches in this period' : 'Connect to Supabase to view match history'}
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {filtered.map(match => (
-                    <div key={match.id} className="p-3 rounded-xl bg-secondary/30 border border-border/30">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium">Table {match.tableNumber}</span>
-                        <span className="text-xs text-muted-foreground">{format(match.date, 'MMM d, h:mm a')}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {match.players.map((p, i) => (
-                            <span key={i} className={cn(
-                              'text-xs font-bold px-1.5 py-0.5 rounded',
-                              p.result === 'win' ? 'bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]' : 'bg-primary/20 text-primary'
-                            )}>
-                              {p.result === 'win' ? 'W' : 'L'} {p.name.split(' ')[0]}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Clock className="w-3 h-3" />
-                          {formatDuration(match.duration)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 };

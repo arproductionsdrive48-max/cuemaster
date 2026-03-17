@@ -42,6 +42,8 @@ const MembersScreen = () => {
       phone: player.phone || '',
       email: '',
       membershipType: player.isGuest ? 'Guest' : 'Regular',
+      tier: 'Regular',
+      points: 0,
       isGuest: player.isGuest,
     });
     setShowAddModal(false);
@@ -147,7 +149,7 @@ const MembersScreen = () => {
           </div>
         </div>
       ) : (
-        <div className="px-4 space-y-3 stagger-children">
+        <div className="px-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger-children">
           {filteredMembers.map(member => (
             <MemberCard
               key={member.id}

@@ -36,6 +36,10 @@ const faqs = [
     question: 'How do I report an issue with a table?',
     answer: 'Please inform our staff immediately if you notice any issues with equipment. You can also use the feedback form below to report non-urgent concerns.',
   },
+  {
+    question: 'What are "Smart Suggestions" and how do they work?',
+    answer: 'Snook OS uses an intelligent on-device AI to generate cool player nicknames, catchy tournament titles, and WhatsApp commentary. The very first time you use a Magic Wand button, it downloads a small one-time update (~300 MB) securely to your device. After that, all smart features run instantly and 100% offline with zero internet required.',
+  },
 ];
 
 const HelpScreen = ({ onBack }: HelpScreenProps) => {
@@ -66,32 +70,21 @@ const HelpScreen = ({ onBack }: HelpScreenProps) => {
 
       <div className="px-4 space-y-4">
         {/* Contact Info */}
-        <div className="glass-card p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center">
-              <HelpCircle className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold">Need Help?</h2>
-              <p className="text-sm text-muted-foreground">We're here to assist you</p>
-            </div>
+        <div className="glass-card p-6 rounded-3xl text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-[hsl(var(--gold))]/10 flex items-center justify-center mx-auto mb-2 border border-[hsl(var(--gold))]/20">
+            <HelpCircle className="w-8 h-8 text-[hsl(var(--gold))]" />
           </div>
-          <div className="flex gap-3 mt-4">
-            <a 
-              href="mailto:support@snookos.app"
-              className="flex-1 btn-glass flex items-center justify-center gap-2"
-            >
-              <Mail className="w-4 h-4" />
-              Email Us
-            </a>
-            <a 
-              href="tel:+919876543210"
-              className="flex-1 btn-glass flex items-center justify-center gap-2"
-            >
-              <MessageSquare className="w-4 h-4" />
-              Call Us
-            </a>
-          </div>
+          <h2 className="text-xl font-bold">Need assistance?</h2>
+          <p className="text-sm text-gray-400">Our support team is available via WhatsApp to help resolve any technical or billing issues you encounter.</p>
+          <a 
+            href="https://wa.me/1234567890" 
+            target="_blank" 
+            rel="noreferrer"
+            className="w-full inline-flex justify-center items-center gap-2 mt-2 px-6 py-3.5 rounded-xl bg-[#25D366]/10 text-[#25D366] font-bold hover:bg-[#25D366]/20 transition-all border border-[#25D366]/20"
+          >
+            <MessageSquare className="w-5 h-5" />
+            Contact via WhatsApp
+          </a>
         </div>
 
         {/* FAQs */}

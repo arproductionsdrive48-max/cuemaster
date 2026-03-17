@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import Header from '@/components/layout/Header';
-import { Tournament, TournamentType, Member } from '@/types';
+import { Tournament, TournamentType, Member, TournamentBracketMatch } from '@/types';
 import TournamentCard from '@/components/tournaments/TournamentCard';
 import TournamentDetailModal from '@/components/tournaments/TournamentDetailModal';
 import CreateTournamentModal from '@/components/tournaments/CreateTournamentModal';
 import RegisterPlayerModal from '@/components/tournaments/RegisterPlayerModal';
+import BracketModal from '@/components/tournaments/BracketModal';
+import LiveScoring from '@/components/tournaments/LiveScoring';
+import ShareTournamentModal from '@/components/tournaments/ShareTournamentModal';
 import { useMembers } from '@/contexts/MembersContext';
 import { Search, Plus, Trophy, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -24,6 +27,9 @@ const EventsScreen = () => {
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [registeringTournament, setRegisteringTournament] = useState<Tournament | null>(null);
+  const [viewingBracket, setViewingBracket] = useState<Tournament | null>(null);
+  const [liveScoringTournament, setLiveScoringTournament] = useState<Tournament | null>(null);
+  const [sharingTournament, setSharingTournament] = useState<Tournament | null>(null);
 
   const { mutate: sbCreate, isPending: isCreating } = useSupabaseCreateTournament(isOnline ? clubId : null);
   const { mutate: sbUpdate } = useSupabaseUpdateTournament(isOnline ? clubId : null);
@@ -52,6 +58,12 @@ const EventsScreen = () => {
     if (!isOnline) { toast.error('Offline – changes will not save'); return; }
     const tournament = tournaments.find(t => t.id === tournamentId);
     if (!tournament) return;
+
+    if (tournament.registeredPlayers.length + players.length > tournament.maxPlayers) {
+      toast.error(`Cannot register: Tournament has only ${tournament.maxPlayers - tournament.registeredPlayers.length} spots left`);
+      return;
+    }
+
     const playerNames = players.map(p => p.name);
     const updated: Tournament = { ...tournament, registeredPlayers: [...tournament.registeredPlayers, ...playerNames] };
     sbUpdate(updated, {
@@ -77,17 +89,129 @@ const EventsScreen = () => {
       onError: (err: any) => toast.error(err?.message || 'Failed to update tournament'),
     });
     setTournaments(prev => prev.map(t => t.id === updated.id ? updated : t));
-    setSelectedTournament(updated);
+    if (selectedTournament?.id === updated.id) setSelectedTournament(updated);
+  };
+
+  const generateBracket = (tournamentId: string) => {
+    if (!isOnline) { toast.error('Offline'); return; }
+    const tournament = tournaments.find(t => t.id === tournamentId);
+    if (!tournament) return;
+    
+    const players = [...tournament.registeredPlayers];
+    const nextPowerOf2 = Math.pow(2, Math.ceil(Math.log2(players.length)));
+    const byesRequired = nextPowerOf2 - players.length;
+    
+    const matches: TournamentBracketMatch[] = [];
+    const numMatches = nextPowerOf2 / 2;
+    const activePlayers = [...players];
+    for (let i = 0; i < byesRequired; i++) activePlayers.push('Bye');
+    
+    let matchId = 1;
+    for (let i = 0; i < numMatches; i++) {
+      const p1 = activePlayers[i * 2];
+      const p2 = activePlayers[i * 2 + 1];
+      const isByeMatch = p1 === 'Bye' || p2 === 'Bye';
+      matches.push({
+        id: `${tournamentId}-m${matchId++}`,
+        round: 0,
+        matchNumber: i + 1,
+        player1: p1,
+        player2: p2,
+        score1: 0,
+        score2: 0,
+        bestOf: 3,
+        status: isByeMatch ? 'completed' : 'pending',
+        winner: p1 === 'Bye' ? p2 : p2 === 'Bye' ? p1 : undefined
+      });
+    }
+    
+    let prevRoundMatches = numMatches;
+    let roundIdx = 1;
+    while (prevRoundMatches > 1) {
+      const currRoundMatches = prevRoundMatches / 2;
+      for (let i = 0; i < currRoundMatches; i++) {
+        matches.push({
+          id: `${tournamentId}-r${roundIdx}-m${matchId++}`,
+          round: roundIdx,
+          matchNumber: i + 1,
+          player1: null,
+          player2: null,
+          score1: 0,
+          score2: 0,
+          bestOf: 3,
+          status: 'pending'
+        });
+      }
+      prevRoundMatches = currRoundMatches;
+      roundIdx++;
+    }
+    
+    const updated: Tournament = { ...tournament, bracket: { matches } };
+    handleUpdateTournament(updated);
+    if (viewingBracket?.id === tournament.id) setViewingBracket(updated);
+    toast.success('Bracket generated successfully!');
+  };
+
+  const handleUpdateMatch = (tournamentId: string, matchId: string, updates: Partial<TournamentBracketMatch>) => {
+    if (!isOnline) return;
+    const tournament = tournaments.find(t => t.id === tournamentId);
+    if (!tournament || !tournament.bracket) return;
+    
+    const matches = [...tournament.bracket.matches];
+    const matchIndex = matches.findIndex(m => m.id === matchId);
+    if (matchIndex === -1) return;
+    
+    const match = { ...matches[matchIndex], ...updates };
+    matches[matchIndex] = match;
+    
+    // Auto-advance logic
+    if (match.status === 'completed' && match.winner) {
+      const nextRound = match.round + 1;
+      const nextMatchNumber = Math.ceil(match.matchNumber / 2);
+      const nextMatchIndex = matches.findIndex(m => m.round === nextRound && m.matchNumber === nextMatchNumber);
+      
+      if (nextMatchIndex !== -1) {
+        const nextMatch = { ...matches[nextMatchIndex] };
+        if (match.matchNumber % 2 !== 0) {
+          nextMatch.player1 = match.winner;
+        } else {
+          nextMatch.player2 = match.winner;
+        }
+        matches[nextMatchIndex] = nextMatch;
+      }
+    }
+    
+    const updated: Tournament = { ...tournament, bracket: { matches } };
+    handleUpdateTournament(updated);
+    if (viewingBracket?.id === tournament.id) setViewingBracket(updated);
+    if (liveScoringTournament?.id === tournament.id) setLiveScoringTournament(updated);
+  };
+
+  const handleCardAction = (tournament: Tournament, action: 'edit' | 'delete' | 'view_brackets' | 'live_score' | 'register') => {
+    switch (action) {
+      case 'edit':
+        setSelectedTournament(tournament);
+        break;
+      case 'delete':
+        if (window.confirm('Delete this tournament?')) {
+          setTournaments(prev => prev.filter(t => t.id !== tournament.id));
+          toast.success('Tournament deleted');
+        }
+        break;
+      case 'view_brackets':
+        setViewingBracket(tournament);
+        break;
+      case 'live_score':
+        setLiveScoringTournament(tournament);
+        break;
+      case 'register':
+        setRegisteringTournament(tournament);
+        break;
+    }
   };
 
   const handleShare = (tournament: Tournament) => {
-    const text = `🎱 ${tournament.name}\n📅 ${tournament.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}\n📍 ${tournament.location}\n💰 Entry: ₹${tournament.entryFee}\n\nRegister now at Snook OS!`;
-    if (navigator.share) {
-      navigator.share({ title: tournament.name, text });
-    } else {
-      navigator.clipboard.writeText(text);
-      toast.success('Tournament details copied to clipboard!');
-    }
+    setSharingTournament(tournament);
   };
 
   return (
@@ -123,53 +247,71 @@ const EventsScreen = () => {
         </div>
       )}
 
-      <div className="px-4 mb-4 overflow-x-auto no-scrollbar">
-        <div className="flex gap-2 pb-2">
-          {filters.map(filter => (
-            <button
-              key={filter.id}
-              onClick={() => setActiveFilter(filter.id)}
-              className={cn(
-                "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all",
-                activeFilter === filter.id
-                  ? "bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))]"
-                  : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
-              )}
-            >
-              {filter.label}
-            </button>
-          ))}
+      <div className="px-4 md:px-8 max-w-[1600px] mx-auto mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Filters */}
+        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
+          <div className="flex gap-2 pb-2 md:pb-0">
+            {filters.map(filter => (
+              <button
+                key={filter.id}
+                onClick={() => setActiveFilter(filter.id)}
+                className={cn(
+                  "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all",
+                  activeFilter === filter.id
+                    ? "bg-[#1A1A1A] text-[hsl(var(--gold))] shadow-sm border border-[hsl(var(--gold))]/30"
+                    : "bg-[#121212] text-gray-500 hover:text-white border border-white/5 hover:bg-[#1A1A1A]"
+                )}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Desktop Create Button */}
+        {isOnline && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="hidden md:flex items-center gap-2 px-6 py-3 rounded-xl bg-[hsl(var(--gold))] text-black font-extrabold hover:scale-[1.02] transition-transform shadow-lg shadow-[hsl(var(--gold))]/20"
+          >
+            <Plus className="w-5 h-5 -ml-1 border-2 border-black rounded-full p-0.5" />
+            Create Tournament
+          </button>
+        )}
       </div>
 
-      <div className="px-4 space-y-4">
+      <div className="px-4 md:px-8 max-w-[1600px] mx-auto">
         {filteredTournaments.length === 0 ? (
           <div className="glass-card p-10 text-center space-y-3">
             <Trophy className="w-12 h-12 text-muted-foreground mx-auto" />
             <p className="font-semibold text-muted-foreground">No tournaments found</p>
             {isOnline && (
-              <p className="text-xs text-muted-foreground">Tap + to create your first tournament</p>
+              <p className="text-xs text-muted-foreground block md:hidden">Tap + to create your first tournament</p>
             )}
           </div>
         ) : (
-          filteredTournaments.map((tournament, index) => (
-            <TournamentCard
-              key={tournament.id}
-              tournament={tournament}
-              onClick={() => setSelectedTournament(tournament)}
-              onRegister={() => setRegisteringTournament(tournament)}
-              onShare={() => handleShare(tournament)}
-              style={{ animationDelay: `${index * 0.05}s` }}
-            />
-          ))
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6 stagger-children">
+            {filteredTournaments.map((tournament, index) => (
+              <TournamentCard
+                key={tournament.id}
+                tournament={tournament}
+                onClick={() => setSelectedTournament(tournament)}
+                onRegister={() => setRegisteringTournament(tournament)}
+                onShare={() => handleShare(tournament)}
+                onAction={(action) => handleCardAction(tournament, action)}
+                style={{ animationDelay: `${index * 0.05}s` }}
+              />
+            ))}
+          </div>
         )}
       </div>
 
+      {/* Mobile FAB */}
       <button
         onClick={() => isOnline ? setShowCreateModal(true) : toast.error('Offline – changes will not save')}
         title={!isOnline ? 'Offline – changes will not save' : 'Create tournament'}
         className={cn(
-          "fixed bottom-24 right-4 w-14 h-14 rounded-2xl bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))] shadow-lg shadow-[hsl(var(--gold))]/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform z-40",
+          "md:hidden fixed bottom-24 right-4 w-14 h-14 rounded-2xl bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))] shadow-lg shadow-[hsl(var(--gold))]/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform z-40",
           !isOnline && "opacity-50"
         )}
       >
@@ -200,6 +342,31 @@ const EventsScreen = () => {
           tournament={registeringTournament}
           onClose={() => setRegisteringTournament(null)}
           onRegister={(players) => handleRegisterPlayers(registeringTournament.id, players)}
+        />
+      )}
+
+      {viewingBracket && (
+        <BracketModal
+          tournament={viewingBracket}
+          onClose={() => setViewingBracket(null)}
+          onUpdateMatch={(matchId, updates) => handleUpdateMatch(viewingBracket.id, matchId, updates)}
+          onGenerateBracket={() => generateBracket(viewingBracket.id)}
+        />
+      )}
+
+      {liveScoringTournament && (
+        <LiveScoring
+          tournament={liveScoringTournament}
+          onClose={() => setLiveScoringTournament(null)}
+          onUpdateMatch={(matchId, updates) => handleUpdateMatch(liveScoringTournament.id, matchId, updates)}
+        />
+      )}
+
+      {sharingTournament && (
+        <ShareTournamentModal
+          tournament={sharingTournament}
+          isOpen={!!sharingTournament}
+          onClose={() => setSharingTournament(null)}
         />
       )}
     </div>

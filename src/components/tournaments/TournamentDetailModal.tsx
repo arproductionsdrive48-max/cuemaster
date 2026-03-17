@@ -1,15 +1,18 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Tournament, TournamentBracketMatch } from '@/types';
 import PlayerStatsPopup from './PlayerStatsPopup';
+import ShareTournamentModal from './ShareTournamentModal';
 import {
   ArrowLeft, Calendar, Trophy, Users, MapPin, Video,
   UserPlus, Edit, IndianRupee, X, Plus, Minus, Award, Link, Play,
-  Shuffle, CheckCircle, Clock, Flag, GripVertical, Star, ChevronRight
+  Shuffle, CheckCircle, Clock, Flag, GripVertical, Star, ChevronRight, Trash2,
+  Share2, MessageSquare, Copy
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useMembers } from '@/contexts/MembersContext';
+import { generateCommentary } from '@/services/smartGenerator';
 
 interface TournamentDetailModalProps {
   tournament: Tournament;
@@ -18,7 +21,7 @@ interface TournamentDetailModalProps {
   onUpdate?: (updated: Tournament) => void;
 }
 
-type TabType = 'overview' | 'bracket' | 'leaderboard' | 'matches';
+type TabType = 'overview' | 'participants' | 'bracket' | 'leaderboard' | 'matches';
 
 const BEST_OF_OPTIONS = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
 
@@ -103,7 +106,7 @@ const getRoundName = (round: number, totalRounds: number) => {
 };
 
 const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: TournamentDetailModalProps) => {
-  const { tournaments, updateMember, members } = useMembers();
+  const { updateMember, members, clubSettings } = useMembers();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [editingOverview, setEditingOverview] = useState(false);
@@ -111,6 +114,8 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
   const [editMaxPlayers, setEditMaxPlayers] = useState(tournament.maxPlayers);
   const [scoreModal, setScoreModal] = useState<TournamentBracketMatch | null>(null);
   const [breakInputModal, setBreakInputModal] = useState<{ match: TournamentBracketMatch; winner: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showShareModal, setShowShareModal] = useState(false);
   const [break1, setBreak1] = useState('');
   const [break2, setBreak2] = useState('');
   const [bestOfModal, setBestOfModal] = useState<string | null>(null); // matchId
@@ -120,13 +125,19 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
   const [trophyPlayer, setTrophyPlayer] = useState<string | null>(null);
   const [trophyName, setTrophyName] = useState('');
   const [playerTrophies, setPlayerTrophies] = useState<Record<string, string[]>>(tournament.trophies ?? {});
-  // Bracket is loaded from DB (tournament.bracket) or generated locally
+  // Bracket is loaded from DB (tournament.bracket)
   const [localTournament, setLocalTournament] = useState<Tournament>(tournament);
-  const [bracket, setBracket] = useState<TournamentBracketMatch[]>(
-    (tournament as any).bracket ?? []
-  );
+  const [bracket, setBracket] = useState<TournamentBracketMatch[]>(tournament.bracket?.matches || []);
+  const [highlights, setHighlights] = useState<Record<string, { text: string; copied: boolean }>>({});
+
+  // Sync state when props change
+  useEffect(() => {
+    setLocalTournament(tournament);
+    setBracket(tournament.bracket?.matches || []);
+  }, [tournament]);
+
   const [bracketGenerated, setBracketGenerated] = useState(
-    !!((tournament as any).bracket?.length) || tournament.status === 'in_progress'
+    !!(tournament.bracket?.matches?.length) || tournament.status === 'in_progress'
   );
   const [swapMode, setSwapMode] = useState<{ matchId: string; slot: 1 | 2 } | null>(null);
   const [endTournamentModal, setEndTournamentModal] = useState(false);
@@ -147,6 +158,7 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
 
   const tabs: { id: TabType; label: string }[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'participants', label: 'Participants' },
     { id: 'bracket', label: 'Bracket' },
     { id: 'leaderboard', label: 'Leaderboard' },
     { id: 'matches', label: 'Matches' },
@@ -158,8 +170,40 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
 
   // Persist bracket into tournament object so DB saves it
   const persistUpdate = (updatedTournament: Tournament, updatedBracket: TournamentBracketMatch[]) => {
-    const withBracket = { ...updatedTournament, bracket: updatedBracket } as Tournament;
+    const withBracket = { ...updatedTournament, bracket: { matches: updatedBracket } } as Tournament;
     if (onUpdate) onUpdate(withBracket);
+  };
+
+  const handleUpdateTournament = (updates: Partial<Tournament>) => {
+    const updated = { ...localTournament, ...updates };
+    setLocalTournament(updated);
+    if (onUpdate) onUpdate(updated);
+  };
+
+  const handleRemovePlayer = (playerName: string) => {
+    const isStarted = localTournament.status === 'in_progress';
+    const msg = isStarted 
+      ? `Tournament is IN PROGRESS. Removing ${playerName} will require a bracket RE-DRAW. Continue?`
+      : `Remove ${playerName} from tournament?`;
+      
+    if (!window.confirm(msg)) return;
+    
+    const updatedPlayers = localTournament.registeredPlayers.filter(p => p !== playerName);
+    
+    // If started, we must reset bracket generation so they have to re-draw
+    if (isStarted) {
+      setBracket([]);
+      setBracketGenerated(false);
+      handleUpdateTournament({ 
+        registeredPlayers: updatedPlayers,
+        status: 'upcoming' // Revert to upcoming so they can re-draw
+      });
+      toast.info('Tournament status reset to "Upcoming". Please re-draw the bracket.');
+    } else {
+      handleUpdateTournament({ registeredPlayers: updatedPlayers });
+    }
+    
+    toast.success(`${playerName} removed`);
   };
 
   const handleSaveOverview = () => {
@@ -229,15 +273,80 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
   };
 
   const handleUpdateScore = (matchId: string, player: 1 | 2, delta: number) => {
-    setBracket(prev => prev.map(m => {
-      if (m.id !== matchId) return m;
-      const maxWins = winsNeeded(m.bestOf);
-      // Block if someone already reached the winning score
-      if (m.score1 >= maxWins || m.score2 >= maxWins) return m;
-      const newS1 = player === 1 ? Math.max(0, Math.min(m.score1 + delta, maxWins)) : m.score1;
-      const newS2 = player === 2 ? Math.max(0, Math.min(m.score2 + delta, maxWins)) : m.score2;
-      return { ...m, score1: newS1, score2: newS2 };
-    }));
+    setBracket(prev => {
+      const updated = prev.map(m => {
+        if (m.id !== matchId) return m;
+        const maxWins = winsNeeded(m.bestOf);
+        if (m.score1 >= maxWins || m.score2 >= maxWins) return m;
+        const newS1 = player === 1 ? Math.max(0, Math.min(m.score1 + delta, maxWins)) : m.score1;
+        const newS2 = player === 2 ? Math.max(0, Math.min(m.score2 + delta, maxWins)) : m.score2;
+        
+        // Generate highlight text
+        const commentary = generateCommentary(
+          [m.player1 || 'Player 1', m.player2 || 'Player 2'],
+          m.tableNumber,
+          newS1 >= maxWins ? m.player1! : (newS2 >= maxWins ? m.player2! : undefined),
+          { s1: newS1, s2: newS2 },
+          m.bestOf,
+          clubSettings.clubName
+        );
+        setHighlights(h => ({ ...h, [matchId]: { text: commentary, copied: false } }));
+        
+        return { ...m, score1: newS1, score2: newS2 };
+      });
+      return updated;
+    });
+  };
+
+  const copyHighlight = async (matchId: string) => {
+    let h = highlights[matchId];
+    
+    // If highlight doesn't exist (e.g. for completed matches loaded from DB), generate it now
+    if (!h) {
+      const match = bracket.find(m => m.id === matchId);
+      if (!match) return;
+      
+      const maxWins = winsNeeded(match.bestOf);
+      const isCompleted = match.status === 'completed';
+      const winner = isCompleted ? (match.score1 > match.score2 ? match.player1 : match.player2) : undefined;
+      
+      const text = generateCommentary(
+        [match.player1 || 'Player 1', match.player2 || 'Player 2'],
+        match.tableNumber,
+        winner || undefined,
+        { s1: match.score1, s2: match.score2 },
+        match.bestOf,
+        clubSettings.clubName
+      );
+      
+      h = { text, copied: false };
+      setHighlights(prev => ({ ...prev, [matchId]: h }));
+    }
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(h.text);
+      } else {
+        // Fallback: execCommand('copy')
+        const textArea = document.createElement("textarea");
+        textArea.value = h.text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        textArea.style.top = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      
+      setHighlights(prev => ({ ...prev, [matchId]: { ...h, copied: true } }));
+      toast.success('Copied! Paste it in your WhatsApp group. 🎱');
+      setTimeout(() => setHighlights(prev => ({ ...prev, [matchId]: { ...prev[matchId], copied: false } })), 2500);
+    } catch (err) {
+      console.error('[Snook OS] Copy failed:', err);
+      toast.error('Could not copy automatically. Please select and copy manually.');
+    }
   };
 
   const handleChangeBestOf = (matchId: string, bestOf: number) => {
@@ -281,7 +390,10 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
       if (!name || breakVal <= 0) return;
       const member = members.find(m => m.name === name);
       if (member && breakVal > (member.highestBreak ?? 0)) {
-        updateMember(member.id, { highestBreak: breakVal });
+        updateMember(member.id, { 
+          highestBreak: breakVal,
+          cpp_points: (member.cpp_points || 0) + 5
+        });
       }
     });
 
@@ -381,8 +493,10 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
     [derivedChampion, derivedRunnerUp, ...derivedThirdPlace].filter(Boolean).forEach((playerName, idx) => {
       const member = members.find(m => m.name === playerName);
       if (member) {
+        const isChampion = idx === 0;
         updateMember(member.id, {
-          wins: member.wins + (idx === 0 ? 1 : 0),
+          wins: member.wins + (isChampion ? 1 : 0),
+          cpp_points: (member.cpp_points || 0) + (isChampion ? 20 : 0)
         });
       }
     });
@@ -425,66 +539,71 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
     .filter(Boolean) as string[];
 
   return (
-    <div className="fixed inset-0 z-50 bg-background">
+    <div className="fixed inset-0 z-50 bg-[#0B0B0B] text-white">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50">
+      <div className="sticky top-0 z-10 bg-[#0B0B0B] border-b border-white/5">
         <div className="flex items-center justify-between p-4">
-          <button onClick={onClose} className="p-2 -ml-2 rounded-xl hover:bg-accent/30 transition-colors">
+          <button onClick={onClose} className="p-2 -ml-2 rounded-xl hover:bg-white/5 transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <span className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+          <span className="font-bold text-sm uppercase tracking-widest text-gray-400">
             Manage Tournament
           </span>
-          <div className="w-9" />
+          <button 
+            onClick={() => setShowShareModal(true)}
+            className="p-2 -mr-2 rounded-xl hover:bg-white/5 transition-colors text-gray-400 hover:text-white"
+          >
+            <Share2 className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
       <div className="overflow-y-auto h-[calc(100vh-64px)] pb-32">
         {/* Hero */}
-        <div className="relative h-48 bg-gradient-to-br from-secondary via-background to-secondary">
+        <div className="relative h-64 bg-[#121212]">
           {localTournament.image && (
-            <div className="absolute inset-0 bg-cover bg-center opacity-40" style={{ backgroundImage: `url(${localTournament.image})` }} />
+            <div className="absolute inset-0 bg-cover bg-center opacity-30 mix-blend-luminosity" style={{ backgroundImage: `url(${localTournament.image})` }} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent" />
-          <div className="absolute bottom-4 left-4 right-4">
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0B0B0B] via-[#0B0B0B]/80 to-transparent" />
+          <div className="absolute bottom-6 left-6 right-6 flex flex-col items-start">
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
               {localTournament.status === 'in_progress' && (
-                <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-live/20 text-live flex items-center gap-1">
+                <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-live/10 border border-live/20 text-live flex items-center gap-1.5 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
                   <span className="w-1.5 h-1.5 rounded-full bg-live animate-pulse" /> IN PROGRESS
                 </span>
               )}
               {localTournament.status === 'completed' && (
-                <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-available/20 text-available flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" /> COMPLETED
+                <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-available/10 border border-available/20 text-available flex items-center gap-1.5 shadow-[0_0_15px_rgba(34,197,94,0.2)]">
+                  <CheckCircle className="w-3.5 h-3.5" /> COMPLETED
                 </span>
               )}
-              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]">
+              <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[hsl(var(--gold))]/10 border border-[hsl(var(--gold))]/20 text-[hsl(var(--gold))] shadow-[0_0_15px_rgba(250,204,21,0.15)]">
                 {localTournament.type}
               </span>
             </div>
-            <h1 className="text-2xl font-bold mb-1">{localTournament.name}</h1>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
-              <span className="flex items-center gap-1">
-                <Calendar className="w-4 h-4" />
+            <h1 className="text-4xl font-extrabold mb-2 tracking-tight text-white">{localTournament.name}</h1>
+            <div className="flex items-center gap-4 text-sm text-gray-300 flex-wrap font-medium">
+              <span className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-[hsl(var(--gold))]" />
                 {format(localTournament.date, 'MMM d, yyyy')}
                 {localTournament.startTime && (
-                  <span className="flex items-center gap-1 ml-1">
-                    <Clock className="w-3.5 h-3.5" /> {localTournament.startTime}
+                  <span className="flex items-center gap-1.5 ml-2">
+                    <Clock className="w-4 h-4 text-[hsl(var(--gold))]" /> {localTournament.startTime}
                   </span>
                 )}
               </span>
               {localTournament.prizePool && (
-                <span className="flex items-center gap-1 text-[hsl(var(--gold))]">
+                <span className="flex items-center gap-1.5 text-[hsl(var(--gold))] font-bold">
                   <Trophy className="w-4 h-4" /> ₹{localTournament.prizePool.toLocaleString()}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5 mt-2 text-sm text-gray-400 font-medium pb-2 border-b border-white/5 w-full">
               <Users className="w-4 h-4" />
-              {localTournament.registeredPlayers.length}/{localTournament.maxPlayers} Players
+              {localTournament.registeredPlayers.length}/{localTournament.maxPlayers} Players Registered
               {localTournament.winner && (
-                <span className="ml-3 text-[hsl(var(--gold))] font-semibold flex items-center gap-1">
-                  <Star className="w-3.5 h-3.5" /> {localTournament.winner}
+                <span className="ml-auto text-[hsl(var(--gold))] font-bold flex items-center gap-1.5 bg-[hsl(var(--gold))]/10 px-3 py-1 rounded-full border border-[hsl(var(--gold))]/20">
+                  <Star className="w-3.5 h-3.5" /> Champion: {localTournament.winner}
                 </span>
               )}
             </div>
@@ -492,104 +611,168 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
         </div>
 
         {/* Tabs */}
-        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50">
-          <div className="flex">
+        <div className="sticky top-0 z-10 bg-[#0B0B0B]/95 backdrop-blur-xl border-b border-white/5 px-2">
+          <div className="flex overflow-x-auto scrollbar-hide py-1">
             {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  'flex-1 py-3 text-sm font-medium transition-colors relative',
-                  activeTab === tab.id ? 'text-[hsl(var(--gold))]' : 'text-muted-foreground hover:text-foreground'
+                  'whitespace-nowrap px-5 py-3 text-sm font-bold transition-all relative',
+                  activeTab === tab.id ? 'text-[hsl(var(--gold))]' : 'text-gray-500 hover:text-white'
                 )}
               >
                 {tab.label}
-                {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--gold))]" />}
+                {activeTab === tab.id && <div className="absolute bottom-0 left-4 right-4 h-0.5 bg-[hsl(var(--gold))] shadow-[0_0_10px_rgba(250,204,21,0.5)]" />}
               </button>
             ))}
           </div>
         </div>
 
         {/* Tab Content */}
-        <div className="p-4">
+        <div className="p-4 sm:p-6 max-w-4xl mx-auto">
 
           {/* ── OVERVIEW ── */}
           {activeTab === 'overview' && (
             <div className="space-y-4">
               {/* Winner banner */}
               {localTournament.winner && (
-                <div className="glass-card p-4 border border-[hsl(var(--gold))]/40 bg-[hsl(var(--gold))]/5 text-center">
-                  <Trophy className="w-8 h-8 text-[hsl(var(--gold))] mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Champion</p>
-                  <p className="text-xl font-bold text-[hsl(var(--gold))]">{localTournament.winner}</p>
+                <div className="p-6 rounded-2xl bg-[#121212] border border-[hsl(var(--gold))]/30 relative overflow-hidden text-center group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[hsl(var(--gold))]/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                  <Trophy className="w-10 h-10 text-[hsl(var(--gold))] mx-auto mb-3" />
+                  <p className="text-xs text-[hsl(var(--gold))] uppercase tracking-widest font-bold mb-1">Champion</p>
+                  <p className="text-2xl font-extrabold text-[#Facc15]">{localTournament.winner}</p>
                 </div>
               )}
 
-              <div className="glass-card p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold">About</h3>
-                  <button onClick={() => setEditingOverview(!editingOverview)} className="p-1.5 rounded-lg hover:bg-accent/30">
-                    <Edit className="w-4 h-4 text-[hsl(var(--gold))]" />
+              <div className="p-5 rounded-2xl bg-[#121212] border border-white/5">
+                <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-3">
+                  <h3 className="font-bold text-white uppercase tracking-wider text-xs">About Event</h3>
+                  <button onClick={() => setEditingOverview(!editingOverview)} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
+                    <Edit className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
-                <p className="text-sm text-muted-foreground">{localTournament.description}</p>
+                <p className="text-sm text-gray-400 font-medium leading-relaxed">{localTournament.description || 'No description provided.'}</p>
               </div>
 
-              <div className="glass-card p-4">
-                <h3 className="font-semibold mb-2">Location</h3>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <MapPin className="w-4 h-4" /> {localTournament.location}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-5 rounded-2xl bg-[#121212] border border-white/5">
+                  <h3 className="font-bold text-gray-500 uppercase tracking-wider text-[10px] mb-2">Location</h3>
+                  <div className="flex items-center gap-2 text-sm text-white font-bold">
+                    <MapPin className="w-4 h-4 text-[hsl(var(--gold))]" /> {localTournament.location}
+                  </div>
                 </div>
-              </div>
 
-              {editingOverview ? (
-                <div className="glass-card p-4 space-y-4 border border-[hsl(var(--gold))]/30">
-                  <h3 className="font-semibold text-[hsl(var(--gold))]">Edit Tournament</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Entry Fee (₹)</label>
-                      <div className="relative">
-                        <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--gold))]" />
-                        <input type="number" value={editEntryFee} onChange={e => setEditEntryFee(Number(e.target.value))}
-                          className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-secondary/50 border border-border/50 text-foreground outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 text-sm" />
+                {editingOverview ? (
+                  <div className="col-span-2 p-5 rounded-2xl bg-[#1A1A1A] border border-[hsl(var(--gold))]/30 space-y-4">
+                    <h3 className="font-bold text-[hsl(var(--gold))] uppercase tracking-wider text-xs">Quick Edit</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2 block">Entry Fee (₹)</label>
+                        <div className="relative">
+                          <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--gold))]" />
+                          <input type="number" value={editEntryFee} onChange={e => setEditEntryFee(Number(e.target.value))}
+                            className="w-full pl-9 pr-3 py-3 rounded-xl bg-[#0B0B0B] border border-white/5 text-[hsl(var(--gold))] font-bold outline-none focus:ring-1 focus:ring-[hsl(var(--gold))]/50 text-sm" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2 block">Max Players</label>
+                        <input type="number" value={editMaxPlayers} onChange={e => setEditMaxPlayers(Number(e.target.value))}
+                          className="w-full px-4 py-3 rounded-xl bg-[#0B0B0B] border border-white/5 text-white font-bold outline-none focus:ring-1 focus:ring-[hsl(var(--gold))]/50 text-sm" />
                       </div>
                     </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Max Players</label>
-                      <input type="number" value={editMaxPlayers} onChange={e => setEditMaxPlayers(Number(e.target.value))}
-                        className="w-full px-3 py-2.5 rounded-xl bg-secondary/50 border border-border/50 text-foreground outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 text-sm" />
+                    <div className="flex gap-3 pt-2">
+                      <button onClick={handleSaveOverview} className="flex-1 py-3 rounded-xl bg-[hsl(var(--gold))] text-black font-extrabold text-sm shadow-lg shadow-[hsl(var(--gold))]/20 hover:scale-[1.02] transition-transform">Save Changes</button>
+                      <button onClick={() => setEditingOverview(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-white font-bold text-sm hover:bg-white/10 transition-colors">Cancel</button>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={handleSaveOverview} className="flex-1 py-2.5 rounded-xl bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))] font-semibold text-sm">Save Changes</button>
-                    <button onClick={() => setEditingOverview(false)} className="flex-1 py-2.5 rounded-xl bg-secondary text-foreground font-semibold text-sm">Cancel</button>
+                ) : (
+                  <div className="p-5 rounded-2xl bg-[#121212] border border-white/5">
+                    <h3 className="font-bold text-gray-500 uppercase tracking-wider text-[10px] mb-2">Entry Fee</h3>
+                    <p className="text-xl font-extrabold text-[hsl(var(--gold))]">₹{localTournament.entryFee.toLocaleString()}</p>
+                    {localTournament.prizePool && (
+                      <p className="text-xs text-gray-500 font-bold mt-1 uppercase tracking-wider">Pool: ₹{localTournament.prizePool.toLocaleString()}</p>
+                    )}
                   </div>
-                </div>
-              ) : (
-                <div className="glass-card p-4">
-                  <h3 className="font-semibold mb-2">Entry Fee</h3>
-                  <p className="text-2xl font-bold text-[hsl(var(--gold))]">₹{localTournament.entryFee.toLocaleString()}</p>
-                  {localTournament.prizePool && (
-                    <p className="text-sm text-muted-foreground mt-1">Prize Pool: ₹{localTournament.prizePool.toLocaleString()}</p>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Prize Distribution */}
               {localTournament.prizeDistribution && localTournament.prizeDistribution.length > 0 && (
-                <div className="glass-card p-4">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-[hsl(var(--gold))]" /> Prize Distribution</h3>
-                  <div className="space-y-2">
+                <div className="p-5 rounded-2xl bg-[#121212] border border-white/5">
+                  <h3 className="font-bold text-white uppercase tracking-wider text-xs mb-4 flex items-center gap-2 border-b border-white/5 pb-3">
+                    <Trophy className="w-4 h-4 text-[hsl(var(--gold))]" /> Prize Distribution
+                  </h3>
+                  <div className="space-y-3">
                     {localTournament.prizeDistribution.filter(p => p.amount > 0).map(prize => (
-                      <div key={prize.place} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
-                        <span className="text-sm font-medium">
-                          {prize.place === 1 ? '🥇 1st Place' : prize.place === 2 ? '🥈 2nd Place' : prize.place === 3 ? '🥉 3rd Place' : `${prize.place}th Place`}
-                          {localTournament.winner && prize.place === 1 && <span className="ml-2 text-xs text-[hsl(var(--gold))]">• {localTournament.winner}</span>}
+                      <div key={prize.place} className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-transparent hover:border-white/10">
+                        <span className="text-sm font-bold flex items-center">
+                          <span className="w-6 opacity-80">{prize.place === 1 ? '🥇' : prize.place === 2 ? '🥈' : prize.place === 3 ? '🥉' : ''}</span>
+                          <span className={prize.place === 1 ? 'text-[hsl(var(--gold))]' : 'text-gray-300'}>
+                            {prize.place === 1 ? '1st Place' : prize.place === 2 ? '2nd Place' : prize.place === 3 ? '3rd Place' : `${prize.place}th Place`}
+                          </span>
+                          {localTournament.winner && prize.place === 1 && <span className="ml-3 text-[10px] px-2 py-0.5 rounded-full bg-[hsl(var(--gold))]/10 text-[hsl(var(--gold))] border border-[hsl(var(--gold))]/20">{localTournament.winner}</span>}
                         </span>
-                        <span className="font-bold text-[hsl(var(--gold))]">₹{prize.amount.toLocaleString()}</span>
+                        <span className={cn("font-extrabold text-lg", prize.place === 1 ? "text-[hsl(var(--gold))]" : "text-white")}>₹{prize.amount.toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PARTICIPANTS ── */}
+          {activeTab === 'participants' && (
+            <div className="space-y-4">
+              <div className="p-5 rounded-2xl bg-[#121212] border border-white/5">
+                <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
+                  <h3 className="font-bold text-white uppercase tracking-wider text-xs">Registered Players ({localTournament.registeredPlayers.length})</h3>
+                  <button 
+                    onClick={onRegister}
+                    disabled={localTournament.registeredPlayers.length >= localTournament.maxPlayers}
+                    className="text-xs font-bold text-[hsl(var(--gold))] flex items-center gap-1 hover:opacity-80 disabled:opacity-30"
+                  >
+                    <Plus className="w-4 h-4" /> Add Player
+                  </button>
+                </div>
+                
+                {localTournament.registeredPlayers.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Users className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">No players registered yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {localTournament.registeredPlayers.map((player, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3.5 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-all group">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center font-bold text-xs text-gray-400">
+                            {idx + 1}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-gray-100">{player}</span>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleRemovePlayer(player)}
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-500 hover:text-red-500 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
+                          title="Remove Player"
+                        >
+                          <Trash2 className="w-4.5 h-4.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {localTournament.registeredPlayers.length >= localTournament.maxPlayers && (
+                <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 flex items-start gap-4">
+                  <CheckCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-200/80 leading-relaxed font-medium">
+                     टूर्नामेंट की क्षमता पूरी हो गई है (Tournament capacity reached).
+                  </p>
                 </div>
               )}
             </div>
@@ -608,7 +791,23 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
 
                   {/* Default Best of selector */}
                   <div className="mb-4">
-                    <p className="text-xs text-muted-foreground mb-2">Default Best Of (all matches)</p>
+                    <p className="text-xs text-muted-foreground mb-2">Registered Players</p>
+                    <div className="flex flex-wrap gap-2">
+                      {localTournament.registeredPlayers.map(p => (
+                        <div key={p} className="px-3 py-1.5 rounded-lg bg-secondary/50 text-sm font-medium border border-border/50 flex items-center gap-2">
+                          {p}
+                          {localTournament.status !== 'completed' && (
+                            <button 
+                              onClick={() => handleRemovePlayer(p)}
+                              className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2 mt-4">Default Best Of (all matches)</p>
                     <div className="flex flex-wrap gap-2 justify-center mb-2">
                       {BEST_OF_OPTIONS.map(n => (
                         <button
@@ -700,6 +899,7 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
                               match={match}
                               onStartMatch={() => handleStartMatch(match.id)}
                               onOpenScore={() => setScoreModal(match)}
+                              onShare={() => copyHighlight(match.id)}
                               onChangeBestOf={() => setBestOfModal(match.id)}
                               onSwap={(slot) => setSwapMode({ matchId: match.id, slot })}
                               swapActive={swapMode?.matchId === match.id}
@@ -807,6 +1007,7 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
                           match={match}
                           onPlayerClick={setSelectedPlayer}
                           onUpdateScore={() => setScoreModal(match)}
+                          onShare={() => copyHighlight(match.id)}
                           onLiveLink={() => { setLiveLinksModal(match); setLiveLinkText(match.liveLink || ''); }}
                         />
                       ))}
@@ -829,7 +1030,12 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
                     <div>
                       <p className="text-sm font-medium text-muted-foreground mb-3">Completed</p>
                       {completedBracketMatches.map(match => (
-                        <MatchCard key={match.id} match={match} onPlayerClick={setSelectedPlayer} />
+                        <MatchCard
+                          key={match.id}
+                          match={match}
+                          onPlayerClick={setSelectedPlayer}
+                          onShare={() => copyHighlight(match.id)}
+                        />
                       ))}
                     </div>
                   )}
@@ -938,7 +1144,42 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
                 </div>
               ))}
 
-              <div className="flex gap-2 mt-3">
+              {/* ── Highlights Panel (auto-shown after any score update) ── */}
+              {highlights[liveMatch.id] && (
+                <div className="mt-4 rounded-xl bg-black/40 border border-[hsl(var(--gold))]/20 overflow-hidden animate-fade-in-up">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 bg-white/5">
+                    <div className="flex items-center gap-2">
+                      <Share2 className="w-3.5 h-3.5 text-[hsl(var(--gold))]" />
+                      <span className="text-[10px] font-bold text-[hsl(var(--gold))] uppercase">Ready to Share</span>
+                    </div>
+                    <button
+                      onClick={() => setHighlights(prev => { const n = { ...prev }; delete n[liveMatch.id]; return n; })}
+                      className="text-gray-600 hover:text-gray-400 text-xs transition-colors"
+                    >✕</button>
+                  </div>
+                  <pre className="px-3 py-2.5 text-xs text-emerald-400 font-mono whitespace-pre-wrap leading-relaxed bg-[#0A0A0A]">
+                    {highlights[liveMatch.id].text}
+                  </pre>
+                  <div className="px-3 pb-3 pt-1 bg-[#0A0A0A]">
+                    <button
+                      onClick={() => copyHighlight(liveMatch.id)}
+                      className={cn(
+                        'w-full py-2 rounded-lg font-bold flex items-center justify-center gap-2 text-xs transition-all',
+                        highlights[liveMatch.id].copied
+                          ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+                          : 'bg-[#25D366]/10 border border-[#25D366]/20 text-[#25D366] hover:bg-[#25D366]/20'
+                      )}
+                    >
+                      {highlights[liveMatch.id].copied
+                        ? <><CheckCircle className="w-3.5 h-3.5" /> Copied!</>
+                        : <><MessageSquare className="w-3.5 h-3.5" /> Copy for WhatsApp</>
+                      }
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-4">
                 <button
                   onClick={() => setScoreModal(null)}
                   className="flex-1 py-2.5 rounded-xl bg-secondary text-foreground font-semibold text-sm"
@@ -1224,6 +1465,14 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
           onClose={() => setSelectedPlayer(null)}
         />
       )}
+
+      {showShareModal && (
+        <ShareTournamentModal
+          tournament={localTournament}
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </div>
   );
 };
@@ -1235,11 +1484,12 @@ interface BracketMatchCardProps {
   onOpenScore?: () => void;
   onChangeBestOf?: () => void;
   onSwap?: (slot: 1 | 2) => void;
+  onShare?: () => void;
   swapActive?: boolean;
   isRound0?: boolean;
 }
 
-const BracketMatchCard = ({ match, onStartMatch, onOpenScore, onChangeBestOf, onSwap, swapActive, isRound0 }: BracketMatchCardProps) => {
+const BracketMatchCard = ({ match, onStartMatch, onOpenScore, onChangeBestOf, onSwap, onShare, swapActive, isRound0 }: BracketMatchCardProps) => {
   const isLive = match.status === 'live';
   const isCompleted = match.status === 'completed';
 
@@ -1259,7 +1509,16 @@ const BracketMatchCard = ({ match, onStartMatch, onOpenScore, onChangeBestOf, on
           </button>
         </div>
         {isLive && <span className="text-xs px-2 py-0.5 rounded bg-live/20 text-live font-semibold flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-live animate-pulse" /> LIVE</span>}
-        {isCompleted && <span className="text-xs px-2 py-0.5 rounded bg-available/20 text-available font-semibold">DONE</span>}
+        {isCompleted && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2 py-0.5 rounded bg-available/20 text-available font-semibold">DONE</span>
+            {onShare && (
+              <button onClick={(e) => { e.stopPropagation(); onShare(); }} className="p-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 transition-colors">
+                <Share2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {[{ player: match.player1, score: match.score1, slot: 1 as const }, { player: match.player2, score: match.score2, slot: 2 as const }].map(({ player, score, slot }) => (
@@ -1318,9 +1577,10 @@ interface MatchCardProps {
   onUpdateScore?: () => void;
   onLiveLink?: () => void;
   onStartMatch?: () => void;
+  onShare?: () => void;
 }
 
-const MatchCard = ({ match, onPlayerClick, onUpdateScore, onLiveLink, onStartMatch }: MatchCardProps) => {
+const MatchCard = ({ match, onPlayerClick, onUpdateScore, onLiveLink, onStartMatch, onShare }: MatchCardProps) => {
   const isLive = match.status === 'live';
   const isCompleted = match.status === 'completed';
 
@@ -1335,7 +1595,20 @@ const MatchCard = ({ match, onPlayerClick, onUpdateScore, onLiveLink, onStartMat
           ) : `Table ${match.tableNumber}`}
         </span>
         {isLive && <span className="bg-live/20 text-live px-2 py-0.5 rounded text-xs font-semibold">LIVE</span>}
-        {isCompleted && <span className="bg-available/20 text-available px-2 py-0.5 rounded text-xs font-semibold">DONE</span>}
+        {isCompleted && (
+          <div className="flex items-center gap-2">
+            <span className="bg-available/20 text-available px-2 py-0.5 rounded text-xs font-semibold">DONE</span>
+            {onShare && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onShare(); }}
+                className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 transition-colors"
+                title="Share Result"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between">

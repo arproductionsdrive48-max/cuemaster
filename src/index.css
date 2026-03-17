@@ -408,3 +408,49 @@
 .stagger-children > *:nth-child(8) { animation-delay: 0.4s; }
 .stagger-children > *:nth-child(9) { animation-delay: 0.45s; }
 .stagger-children > *:nth-child(10) { animation-delay: 0.5s; }
+
+/* Print Styles for Receipts */
+@media print {
+  /* Hide all elements by default using visibility */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Show only the receipt-text and its children */
+  #receipt-text, #receipt-text *, .print-only, .print-only * {
+    visibility: visible !important;
+    display: block !important;
+  }
+
+  /* Position receipt-text at the top-left of the printed page */
+  #receipt-text {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important; /* Standard receipt width */
+    height: auto !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+    background: white !important;
+    color: black !important;
+    font-family: monospace !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    white-space: pre-wrap !important;
+    border: none !important;
+    box-shadow: none !important;
+    z-index: 999999 !important;
+  }
+
+  /* Force white background for printing */
+  html, body {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+.print-only {
+  display: none;
+}

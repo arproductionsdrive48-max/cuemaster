@@ -1,9 +1,10 @@
 import { 
-  Calendar, BarChart3, Settings, HelpCircle, Shield, X, ChevronRight, Megaphone, Download, RefreshCw, Bug
+  Calendar, BarChart3, Settings, HelpCircle, Shield, X, ChevronRight, Megaphone, Download, RefreshCw, Bug, Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { triggerInstall } from '@/components/pwa/InstallPrompt';
 import { useConnection } from '@/contexts/ConnectionContext';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface MoreSheetProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ const MoreSheet = ({ isOpen, onClose, onNavigate }: MoreSheetProps) => {
   const { syncAll, isConnected } = useConnection();
 
   const menuItems = [
+    { id: 'memberships', icon: Users, label: 'Memberships & Wallet', color: 'text-amber-400', bg: 'bg-amber-400/20' },
     { id: 'bookings', icon: Calendar, label: 'Calendar / Bookings', color: 'text-blue-400', bg: 'bg-blue-400/20' },
     { id: 'reports', icon: BarChart3, label: 'Reports & Analytics', color: 'text-emerald-400', bg: 'bg-emerald-400/20' },
     { id: 'promotions', icon: Megaphone, label: 'Promotions', color: 'text-purple-400', bg: 'bg-purple-400/20' },
@@ -42,9 +44,14 @@ const MoreSheet = ({ isOpen, onClose, onNavigate }: MoreSheetProps) => {
     onClose();
   };
 
+  const queryClient = useQueryClient();
+
   const handleSync = async () => {
     onClose();
+    // 1. Force network reconnection loop logic
     await syncAll();
+    // 2. Actually purge/refetch local React Query caches from Supabase
+    await queryClient.invalidateQueries(); 
   };
 
   return (

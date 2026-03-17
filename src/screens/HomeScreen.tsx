@@ -12,6 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import LiveBillDisplay from '@/components/home/LiveBillDisplay';
 import { calculateLiveBill } from '@/lib/billing';
+import AnalyticsDashboard from '@/components/reports/AnalyticsDashboard';
 
 interface HomeScreenProps {
   onNavigate: (tab: 'tables' | 'events' | 'members') => void;
@@ -70,144 +71,165 @@ const HomeScreen = ({ onNavigate }: HomeScreenProps) => {
   ];
 
   return (
-    <div className="min-h-screen pb-24">
-      <Header title="Snook OS" />
+    <>
+      {/* Mobile View - Original HomeScreen */}
+      <div className="block md:hidden min-h-screen pb-24">
+        <Header title="Snook OS" />
 
-      <div className="px-4 space-y-6">
+        <div className="px-4 space-y-6 pb-6">
 
-        {!isOnline && (
-          <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center gap-3">
-            <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-destructive">Database connection failed</p>
-              <p className="text-xs text-muted-foreground">Please check your internet connection or Supabase configuration.</p>
-            </div>
-          </div>
-        )}
-
-        {/* Club Status Banner */}
-        <div className={cn(
-          "glass-card p-4 flex items-center justify-between",
-          clubSettings.isOpen ? "border-available/30" : "border-paused/30"
-        )}>
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "w-3 h-3 rounded-full animate-pulse",
-              clubSettings.isOpen ? "bg-available" : "bg-paused"
-            )} />
-            <div>
-              <p className="font-semibold">Club Status</p>
-              <p className={cn(
-                "text-sm",
-                clubSettings.isOpen ? "text-available" : "text-paused"
-              )}>
-                {clubSettings.isOpen ? 'Open for Business' : 'Currently Closed'}
-              </p>
-            </div>
-          </div>
-          <Clock className="w-5 h-5 text-muted-foreground" />
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 gap-3">
-          {stats.map((stat, index) => (
-            <button
-              key={index}
-              onClick={stat.onClick}
-              disabled={!stat.onClick}
-              className={cn(
-                "glass-card p-4 text-left transition-all",
-                stat.onClick && "hover:scale-[1.02] active:scale-[0.98]"
-              )}
-            >
-              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3", stat.bgColor)}>
-                <stat.icon className={cn("w-5 h-5", stat.color)} />
+          {!isOnline && (
+            <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center gap-3">
+              <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-destructive">Database connection failed</p>
+                <p className="text-xs text-muted-foreground">Please check your internet connection or Supabase configuration.</p>
               </div>
-              <p className="text-2xl font-bold">{stat.value}</p>
-              <p className="text-sm text-muted-foreground">{stat.label}</p>
-            </button>
-          ))}
-        </div>
-
-        {/* Quick Actions */}
-        <div>
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Quick Actions</h3>
-          <div className="grid grid-cols-3 gap-3">
-            <button
-              onClick={() => onNavigate('tables')}
-              className="glass-card p-4 flex flex-col items-center gap-2 hover:bg-accent/30 transition-all"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center">
-                <Table2 className="w-6 h-6 text-primary" />
-              </div>
-              <span className="text-xs font-medium">Tables</span>
-            </button>
-            <button
-              onClick={() => onNavigate('events')}
-              className="glass-card p-4 flex flex-col items-center gap-2 hover:bg-accent/30 transition-all"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--gold))]/20 flex items-center justify-center">
-                <Trophy className="w-6 h-6 text-[hsl(var(--gold))]" />
-              </div>
-              <span className="text-xs font-medium">Events</span>
-            </button>
-            <button
-              onClick={() => onNavigate('members')}
-              className="glass-card p-4 flex flex-col items-center gap-2 hover:bg-accent/30 transition-all"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-available/20 flex items-center justify-center">
-                <Users className="w-6 h-6 text-available" />
-              </div>
-              <span className="text-xs font-medium">Members</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Active Tables Preview */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Active Tables</h3>
-            <button
-              onClick={() => onNavigate('tables')}
-              className="text-xs text-primary font-medium"
-            >
-              View All
-            </button>
-          </div>
-          {tables.filter(t => t.status === 'occupied').length === 0 ? (
-            <div className="glass-card p-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                {isOnline ? 'No tables are currently active' : 'Connect to Supabase to view table status'}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {tables.filter(t => t.status === 'occupied').slice(0, 3).map(table => (
-                <div key={table.id} className="glass-card p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-live/20 flex items-center justify-center">
-                      <span className="text-sm font-bold text-live">{table.tableNumber.toString().padStart(2, '0')}</span>
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{table.players.join(', ')}</p>
-                      <p className="text-xs text-muted-foreground">{table.players.length} players</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <LiveBillDisplay table={table} />
-                    <div className="flex items-center gap-1 text-xs text-live">
-                      <span className="w-1.5 h-1.5 rounded-full bg-live animate-pulse" />
-                      Live
-                    </div>
-                  </div>
-                </div>
-              ))}
             </div>
           )}
-        </div>
 
+          {/* Club Status Banner */}
+          <div className={cn(
+            "glass-card p-4 flex items-center justify-between",
+            clubSettings.isOpen ? "border-available/30" : "border-paused/30"
+          )}>
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "w-3 h-3 rounded-full animate-pulse",
+                clubSettings.isOpen ? "bg-available" : "bg-paused"
+              )} />
+              <div>
+                <p className="font-semibold">Club Status</p>
+                <p className={cn(
+                  "text-sm",
+                  clubSettings.isOpen ? "text-available" : "text-paused"
+                )}>
+                  {clubSettings.isOpen ? 'Open for Business' : 'Currently Closed'}
+                </p>
+              </div>
+            </div>
+            <Clock className="w-5 h-5 text-muted-foreground" />
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 gap-3">
+            {stats.map((stat, index) => (
+              <button
+                key={index}
+                onClick={stat.onClick}
+                disabled={!stat.onClick}
+                className={cn(
+                  "glass-card p-4 text-left transition-all",
+                  stat.onClick && "hover:scale-[1.02] active:scale-[0.98]"
+                )}
+              >
+                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3", stat.bgColor)}>
+                  <stat.icon className={cn("w-5 h-5", stat.color)} />
+                </div>
+                <p className="text-2xl font-bold">{stat.value}</p>
+                <p className="text-sm text-muted-foreground">{stat.label}</p>
+              </button>
+            ))}
+          </div>
+
+          {/* Quick Actions */}
+          <div>
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Quick Actions</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                onClick={() => onNavigate('tables')}
+                className="glass-card p-4 flex flex-col items-center gap-2 hover:bg-accent/30 transition-all"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center">
+                  <Table2 className="w-6 h-6 text-primary" />
+                </div>
+                <span className="text-xs font-medium">Tables</span>
+              </button>
+              <button
+                onClick={() => onNavigate('events')}
+                className="glass-card p-4 flex flex-col items-center gap-2 hover:bg-accent/30 transition-all"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--gold))]/20 flex items-center justify-center">
+                  <Trophy className="w-6 h-6 text-[hsl(var(--gold))]" />
+                </div>
+                <span className="text-xs font-medium">Events</span>
+              </button>
+              <button
+                onClick={() => onNavigate('members')}
+                className="glass-card p-4 flex flex-col items-center gap-2 hover:bg-accent/30 transition-all"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-available/20 flex items-center justify-center">
+                  <Users className="w-6 h-6 text-available" />
+                </div>
+                <span className="text-xs font-medium">Members</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Active Tables Preview */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Active Tables</h3>
+              <button
+                onClick={() => onNavigate('tables')}
+                className="text-xs text-primary font-medium"
+              >
+                View All
+              </button>
+            </div>
+            {tables.filter(t => t.status === 'occupied').length === 0 ? (
+              <div className="glass-card p-6 text-center">
+                <p className="text-sm text-muted-foreground">
+                  {isOnline ? 'No tables are currently active' : 'Connect to Supabase to view table status'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {tables.filter(t => t.status === 'occupied').slice(0, 3).map(table => (
+                  <div key={table.id} className="glass-card p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-live/20 flex items-center justify-center">
+                        <span className="text-sm font-bold text-live">{table.tableNumber.toString().padStart(2, '0')}</span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{table.players.join(', ')}</p>
+                        <p className="text-xs text-muted-foreground">{table.players.length} players</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <LiveBillDisplay table={table} />
+                      <div className="flex items-center gap-1 text-xs text-live">
+                        <span className="w-1.5 h-1.5 rounded-full bg-live animate-pulse" />
+                        Live
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Desktop View - New Analytics Dashboard */}
+      <div className="hidden md:block min-h-screen pb-24 bg-[#0A0A0A]">
+        <Header title="Snook OS" />
+        <div className="pt-2">
+          {!isOnline && (
+            <div className="px-4 md:px-8 mb-4">
+              <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center gap-3">
+                <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-destructive">Database connection failed</p>
+                  <p className="text-xs text-gray-400">Please check your internet connection or Supabase configuration.</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <AnalyticsDashboard />
+        </div>
+      </div>
+    </>
   );
 };
 

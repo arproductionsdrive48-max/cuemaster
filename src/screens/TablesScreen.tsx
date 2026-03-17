@@ -7,6 +7,7 @@ import PaymentModal from '@/components/tables/PaymentModal';
 import StartSessionModal from '@/components/tables/StartSessionModal';
 import MatchHistoryModal from '@/components/tables/MatchHistoryModal';
 import WinnerSelectionModal from '@/components/tables/WinnerSelectionModal';
+import QRModal from '@/components/tables/QRModal';
 import { useMembers } from '@/contexts/MembersContext';
 import { Plus, Store, History, Table2, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ const TablesScreen = () => {
   const [paymentTable, setPaymentTable] = useState<TableSession | null>(null);
   const [winnerTable, setWinnerTable] = useState<TableSession | null>(null);
   const [startSessionTable, setStartSessionTable] = useState<TableSession | null>(null);
+  const [showQRTable, setShowQRTable] = useState<TableSession | null>(null);
   const [showMatchHistory, setShowMatchHistory] = useState(false);
 
   const handleTableUpdate = (updated: TableSession) => {
@@ -33,18 +35,6 @@ const TablesScreen = () => {
 
   const handleWinnerConfirm = (winnersMap: Record<string, 'win' | 'loss' | 'draw'>) => {
     if (!winnerTable) return;
-    winnerTable.players.forEach(playerName => {
-      const member = members.find(m => m.name === playerName);
-      if (member) {
-        const result = winnersMap[playerName];
-        updateMember(member.id, {
-          wins: result === 'win' ? member.wins + 1 : member.wins,
-          losses: result === 'loss' ? member.losses + 1 : member.losses,
-          gamesPlayed: member.gamesPlayed + 1,
-          lastVisit: new Date(),
-        });
-      }
-    });
     const tableWithWinners: TableSession & { _winnersMap?: Record<string, 'win' | 'loss' | 'draw'> } = {
       ...winnerTable,
       // @ts-ignore
@@ -92,7 +82,7 @@ const TablesScreen = () => {
         frameCount: 0,
       };
       updateTable(clearedTable);
-      setPaymentTable(null);
+      // Removed setPaymentTable(null) here to allow success screen to stay
     }
   };
 
@@ -143,6 +133,34 @@ const TablesScreen = () => {
     setStartSessionTable(null);
     setSelectedTable(updatedTable);
     toast.success(`Session started on Table ${table.tableNumber} (${billingMode.replace('_', ' ')} mode)`);
+  };
+
+  const handleTableAction = (table: TableSession, action: 'pause' | 'resume' | 'stop' | 'add_player' | 'split' | 'mark_paid') => {
+    if (!isOnline) {
+      toast.error('Offline – changes will not save');
+      return;
+    }
+
+    switch (action) {
+      case 'pause':
+        updateTable({ ...table, status: 'paused', pausedTime: table.pausedTime + (Date.now() - (table.startTime?.getTime() || Date.now())) });
+        toast.success(`Table ${table.tableNumber} paused`);
+        break;
+      case 'resume':
+        updateTable({ ...table, status: 'occupied', startTime: new Date() });
+        toast.success(`Table ${table.tableNumber} resumed`);
+        break;
+      case 'stop':
+        handleEndSession(table);
+        break;
+      case 'add_player':
+        setSelectedTable(table);
+        break;
+      case 'split':
+      case 'mark_paid':
+        setPaymentTable(table);
+        break;
+    }
   };
 
   const getTableConfig = (tableNumber: number) => {
@@ -222,13 +240,18 @@ const TablesScreen = () => {
           </div>
         </div>
       ) : (
-        <div className="px-4">
-          <div className="grid grid-cols-2 gap-3 stagger-children">
+        <div className="px-4 md:px-8 max-w-[1600px] mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 lg:gap-6 stagger-children">
             {tables.map(table => (
               <TableCard
                 key={table.id}
                 table={table}
                 onClick={() => handleTableClick(table)}
+                onAction={(action) => handleTableAction(table, action)}
+                onQRClick={(e) => {
+                  e.stopPropagation();
+                  setShowQRTable(table);
+                }}
                 disabled={(!clubSettings.isOpen && table.status === 'free') || !isOnline}
               />
             ))}
@@ -289,6 +312,13 @@ const TablesScreen = () => {
 
       {showMatchHistory && (
         <MatchHistoryModal onClose={() => setShowMatchHistory(false)} />
+      )}
+
+      {showQRTable && (
+        <QRModal
+          table={showQRTable}
+          onClose={() => setShowQRTable(null)}
+        />
       )}
     </div>
   );

@@ -23,53 +23,76 @@ const MemberCard = ({ member, onClick }: MemberCardProps) => {
   return (
     <button
       onClick={onClick}
-      className="glass-card-hover p-4 text-left w-full flex items-center gap-4"
+      className={cn(
+        "flex flex-col text-left transition-all duration-300 w-full overflow-hidden hover:shadow-lg shadow-sm group",
+        "bg-[#1A1A1A] border-[#333] border rounded-2xl hover:border-[hsl(var(--gold))]/50 active:scale-[0.98]"
+      )}
     >
-      {/* Avatar */}
-      <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center flex-shrink-0">
-        <span className="text-lg font-bold">{member.avatar}</span>
+      {/* Top Banner section */}
+      <div className="p-4 flex justify-between items-start border-b border-white/5 bg-white/[0.02] w-full">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-[#2A2A2A] flex items-center justify-center border border-white/10 group-hover:border-[hsl(var(--gold))]/30 transition-colors">
+            <span className="text-xl font-bold text-white">{member.avatar}</span>
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-100 text-lg leading-tight truncate max-w-[140px]">{member.name}</h3>
+            {clubSettings.showMembershipBadge ? (
+              <span className={cn(
+                'inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border',
+                membershipColors[member.membershipType]
+              )}>
+                {member.membershipType}
+              </span>
+            ) : (
+              <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {formatDistanceToNow(member.lastVisit, { addSuffix: true })}
+              </p>
+            )}
+          </div>
+        </div>
+        
+        {/* CPP Points Badge top right */}
+        <div className="flex flex-col items-end">
+          <span className="text-xs text-gray-400 font-medium">CPP Score</span>
+          <span className="text-lg font-bold text-[hsl(var(--gold))]">{member.cpp_points || 0}</span>
+        </div>
       </div>
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="font-semibold truncate">{member.name}</h3>
-          {clubSettings.showMembershipBadge && (
-            <span className={cn(
-              'px-2 py-0.5 rounded-full text-[10px] font-semibold border',
-              membershipColors[member.membershipType]
-            )}>
-              {member.membershipType}
-            </span>
+      {/* Body Section */}
+      <div className="p-4 w-full bg-[#121212]/50">
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase text-gray-500 font-bold tracking-wider mb-1">Win Rate</span>
+            <div className="flex gap-2">
+              <span className="text-xs font-bold px-2 py-1 rounded bg-[hsl(var(--gold))]/10 text-[hsl(var(--gold))] border border-[hsl(var(--gold))]/20">W {member.wins}</span>
+              <span className="text-xs font-bold px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20">L {member.losses}</span>
+            </div>
+          </div>
+          
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] uppercase text-gray-500 font-bold tracking-wider mb-1">Total Games</span>
+            <span className="text-sm font-bold text-gray-300">{member.gamesPlayed} matches</span>
+          </div>
+        </div>
+
+        {/* Balance Footer */}
+        <div className={cn(
+          "w-full flex items-center justify-between mt-2 pt-3 border-t border-white/5",
+          member.creditBalance < 0 ? 'text-red-400' : 'text-emerald-400'
+        )}>
+           <span className="text-xs font-medium text-gray-400">
+            {member.creditBalance < 0 ? 'Outstanding Dues' : member.creditBalance > 0 ? 'Available Credit' : 'Balance Settled'}
+          </span>
+          {member.creditBalance !== 0 ? (
+            <div className="flex items-center gap-0.5 font-bold">
+              <IndianRupee className="w-3.5 h-3.5" />
+              <span>{Math.abs(member.creditBalance)}</span>
+            </div>
+          ) : (
+            <span className="text-sm font-bold text-gray-500">₹0</span>
           )}
         </div>
-
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{formatDistanceToNow(member.lastVisit, { addSuffix: true })}</span>
-          </div>
-          {/* W/L display */}
-          <div className="flex items-center gap-1">
-            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))]">W {member.wins}</span>
-            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary">L {member.losses}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Balance */}
-      <div className={cn(
-        'text-right',
-        member.creditBalance < 0 && 'text-primary',
-        member.creditBalance > 0 && 'text-available'
-      )}>
-        <div className="flex items-center gap-0.5 justify-end">
-          <IndianRupee className="w-4 h-4" />
-          <span className="font-bold">{Math.abs(member.creditBalance)}</span>
-        </div>
-        <span className="text-xs text-muted-foreground">
-          {member.creditBalance < 0 ? 'Due' : 'Credit'}
-        </span>
       </div>
     </button>
   );

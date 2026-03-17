@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { TableSession, MenuItem, OrderItem } from '@/types';
 import { useTimer } from '@/hooks/useTimer';
 import { useMembers } from '@/contexts/MembersContext';
@@ -148,7 +148,7 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
 
   // Format start time
   const startTimeFormatted = table.startTime 
-    ? table.startTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    ? table.startTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
     : '--:--';
 
   const handleStart = () => {
@@ -235,6 +235,8 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
       phone: player.phone || '',
       email: '',
       membershipType: player.isGuest ? 'Guest' : 'Regular',
+      tier: 'Regular',
+      points: 0,
       isGuest: player.isGuest,
     });
     
@@ -251,12 +253,12 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
     onEndSession({ ...table, totalBill, _gstAmount: gstAmount } as any);
   };
 
-  const filteredMembers = members.filter(m =>
+  const filteredMembers = useMemo(() => members.filter(m =>
     m.name.toLowerCase().includes(playerSearch.toLowerCase())
-  );
+  ), [members, playerSearch]);
 
   // Use inventory items for Quick POS - show first 6 or all
-  const quickPosItems = showAllItems ? inventory : inventory.slice(0, 6);
+  const quickPosItems = useMemo(() => showAllItems ? inventory : inventory.slice(0, 6), [inventory, showAllItems]);
 
   // Get avatar initials and gradient colors
   const getPlayerGradient = (index: number) => {
@@ -277,16 +279,6 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
     return memberInfo && !memberInfo.isGuest;
   });
 
-  // Bottom navigation tabs
-  const navTabs = [
-    { id: 'tables', icon: BarChart3, label: 'Tables', active: true },
-    { id: 'members', icon: Users, label: 'People', active: false },
-    { id: 'bookings', icon: Calendar, label: 'Calendar', active: false },
-    { id: 'leaderboard', icon: Trophy, label: 'Trophy', active: false },
-    { id: 'cctv', icon: Camera, label: 'Camera', active: false },
-    { id: 'reports', icon: BarChart3, label: 'Reports', active: false },
-    { id: 'settings', icon: Settings, label: 'Settings', active: false },
-  ];
 
   return (
     <div 
@@ -371,7 +363,7 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
       </div>
 
       {/* Scrollable Content */}
-      <div className="overflow-y-auto h-[calc(100vh-240px)] no-scrollbar px-4 pt-4 pb-8">
+      <div className="overflow-y-auto h-[calc(100vh-180px)] no-scrollbar px-4 pt-4 pb-32">
         {/* Timer Section - TOP & Prominent */}
         <div 
           className="rounded-2xl p-5 mb-5"
@@ -696,7 +688,7 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
 
       {/* Sticky Footer with Bill & Pay Button */}
       <div 
-        className="fixed bottom-14 left-0 right-0 px-4 pt-3 pb-3"
+        className="fixed bottom-0 left-0 right-0 px-4 pt-3 pb-6"
         style={{
           background: 'rgba(15, 15, 12, 0.95)',
           backdropFilter: 'blur(20px)',
@@ -744,31 +736,6 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
         </button>
       </div>
 
-      {/* Bottom Navigation Tabs */}
-      <div 
-        className="fixed bottom-0 left-0 right-0 h-14 flex items-center justify-around px-2"
-        style={{
-          background: 'rgba(10, 10, 8, 0.98)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-        }}
-      >
-        {navTabs.slice(0, 7).map((tab) => {
-          const Icon = tab.icon;
-          const isActive = tab.id === 'tables';
-          return (
-            <button
-              key={tab.id}
-              className={cn(
-                "flex flex-col items-center justify-center py-1 px-2 rounded-lg transition-colors",
-                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Icon className={cn("w-5 h-5", isActive && "text-primary")} />
-              <span className="text-[10px] mt-0.5">{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
 
       {/* Add New Player Modal */}
       {showAddPlayerModal && (

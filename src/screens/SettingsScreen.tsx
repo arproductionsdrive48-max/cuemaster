@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 import Header from '@/components/layout/Header';
+import { triggerInstall } from '@/components/pwa/InstallPrompt';
 import CameraSetupModal from '@/components/settings/CameraSetupModal';
 import InventoryModal from '@/components/settings/InventoryModal';
 import ManageTablesModal from '@/components/settings/ManageTablesModal';
 import PrivacyScreen from '@/screens/PrivacyScreen';
 import HelpScreen from '@/screens/HelpScreen';
+import AIStatusCard from '@/components/settings/AIStatusCard';
 import { useMembers } from '@/contexts/MembersContext';
 import { Camera as CameraType, InventoryItem, IndividualTablePricing, BillingMode, TableType } from '@/types';
 import {
   QrCode, Moon, Sun, Wifi, WifiOff, Bell, Shield, HelpCircle, LogOut,
   ChevronRight, Upload, Camera, Plus, Pencil, Trash2, Store, Check, Circle,
-  MessageSquare, Package, Image, IndianRupee, Clock, Zap, Globe,
+  MessageSquare, Package, Image, IndianRupee, Clock, Zap, Globe, Download,
   ToggleLeft, ToggleRight, Table2, ChevronDown, Receipt } from
 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -209,6 +211,15 @@ const SettingsScreen = () => {
 
       {/* Settings Sections */}
       <div className="px-4 space-y-6">
+
+        {/* AI Smart Features Status */}
+        <div>
+          <h3 className="text-sm font-semibold text-[hsl(var(--gold))] uppercase tracking-wide mb-3 flex items-center gap-2">
+            <span>🤖</span> Smart AI Features
+          </h3>
+          <AIStatusCard />
+        </div>
+
         {/* Club Status */}
         <div>
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Club Status</h3>
@@ -248,23 +259,28 @@ const SettingsScreen = () => {
           </div>
         </div>
 
-        {/* Club Identity */}
+        {/* Custom Club Setup (One-Time Sale Branding) */}
         <div>
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Club Identity</h3>
-          <div className="glass-card overflow-hidden">
-            {/* Club Logo Only */}
-            <div className="p-4">
+          <h3 className="text-sm font-semibold text-[hsl(var(--gold))] uppercase tracking-wide mb-3 flex items-center gap-2">
+            <Store className="w-4 h-4" />
+            Custom Club Setup
+          </h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            Upload your club's premium assets here. This is a one-time setup that globally applies your brand across the entire CueMaster application and public portals forever.
+          </p>
+          <div className="glass-card overflow-hidden border border-[hsl(var(--gold))]/20 shadow-[0_0_15px_hsl(var(--gold)/0.05)]">
+            <div className="p-4 border-b border-white/5 flex flex-col gap-4">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-secondary/50 border border-border/50 flex items-center justify-center overflow-hidden">
+                <div className="w-16 h-16 rounded-2xl bg-[hsl(var(--gold))]/5 border border-[hsl(var(--gold))]/30 flex items-center justify-center overflow-hidden">
                   {clubSettings.clubLogo ?
-                  <img src={clubSettings.clubLogo} alt="Club logo" className="w-full h-full object-cover" /> :
-                  <Image className="w-6 h-6 text-muted-foreground" />
+                    <img src={clubSettings.clubLogo} alt="Club logo" className="w-full h-full object-cover" /> :
+                    <Image className="w-6 h-6 text-[hsl(var(--gold))]/70" />
                   }
                 </div>
                 <div className="flex-1">
-                  <p className="font-semibold">Club Logo</p>
-                  <p className="text-sm text-muted-foreground">
-                    {clubSettings.clubLogo ? 'Logo uploaded' : 'No logo set'}
+                  <p className="font-bold text-white">Master Club Logo</p>
+                  <p className="text-xs text-[hsl(var(--gold))]/70">
+                    {clubSettings.clubLogo ? 'Premium branding applied' : 'Upload your official club logo'}
                   </p>
                 </div>
                 <input
@@ -277,7 +293,7 @@ const SettingsScreen = () => {
                       const reader = new FileReader();
                       reader.onload = (ev) => {
                         updateClubSettings({ clubLogo: ev.target?.result as string });
-                        toast.success('Logo updated!');
+                        toast.success('Premium Logo updated!');
                       };
                       reader.readAsDataURL(file);
                     }
@@ -286,13 +302,165 @@ const SettingsScreen = () => {
 
                 <button
                   onClick={() => logoInputRef.current?.click()}
-                  className="px-3 py-2 rounded-xl bg-secondary/50 border border-border/50 text-sm font-medium flex items-center gap-2 hover:bg-secondary transition-colors">
+                  className="px-4 py-2.5 rounded-xl bg-[hsl(var(--gold))] text-[hsl(var(--gold-foreground))] font-bold flex items-center gap-2 hover:bg-[hsl(var(--gold))]/90 transition-all shadow-lg active:scale-95">
                   <Upload className="w-4 h-4" />
-                  Upload
+                  Set Logo
                 </button>
               </div>
+              
+              <div className="space-y-3 pt-3 border-t border-white/5">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Club Name</label>
+                  <input
+                    type="text"
+                    value={clubSettings.clubName || ''}
+                    onChange={(e) => updateClubSettings({ clubName: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-secondary/50 border border-border/50 text-white outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 transition-colors font-medium"
+                    placeholder="Enter club name"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Description</label>
+                  <textarea
+                    rows={2}
+                    value={clubSettings.clubDescription || ''}
+                    onChange={(e) => updateClubSettings({ clubDescription: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-secondary/50 border border-border/50 text-white outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 transition-colors text-sm"
+                    placeholder="Brief description about your club for the public page"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Address</label>
+                  <input
+                    type="text"
+                    value={clubSettings.clubAddress || ''}
+                    onChange={(e) => updateClubSettings({ clubAddress: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-secondary/50 border border-border/50 text-white outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 transition-colors text-sm"
+                    placeholder="Physical location of the club"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Contact Phone Number</label>
+                  <input
+                    type="tel"
+                    value={clubSettings.clubPhone || ''}
+                    onChange={(e) => updateClubSettings({ clubPhone: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-secondary/50 border border-border/50 text-white outline-none focus:ring-2 focus:ring-[hsl(var(--gold))]/50 transition-colors text-sm"
+                    placeholder="Public phone number (e.g. +91 9876543210)"
+                  />
+                </div>
+              </div>
+              
+              {/* Brand Colors & Photos Block */}
+              <div className="space-y-4 pt-4 border-t border-white/5">
+                <div className="flex gap-4 items-center">
+                  <div className="flex-1">
+                    <label className="text-xs text-muted-foreground mb-1 block">Primary Brand Color</label>
+                    <div className="flex bg-secondary/50 rounded-xl overflow-hidden border border-border/50 p-1">
+                      <input
+                        type="color"
+                        value={clubSettings.brandingColors?.primary || '#D4AF37'}
+                        onChange={(e) => updateClubSettings({ brandingColors: { ...(clubSettings.brandingColors || { secondary: '', accent: '' }), primary: e.target.value }})}
+                        className="w-10 h-8 rounded shrink-0 cursor-pointer bg-transparent border-0 outline-none p-0"
+                      />
+                      <input 
+                        type="text" 
+                        value={clubSettings.brandingColors?.primary || '#D4AF37'} 
+                        onChange={(e) => updateClubSettings({ brandingColors: { ...(clubSettings.brandingColors || { secondary: '', accent: '' }), primary: e.target.value }})}
+                        className="flex-1 bg-transparent px-2 text-sm text-white font-mono uppercase outline-none" 
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-muted-foreground mb-1 block">Accent Color</label>
+                    <div className="flex bg-secondary/50 rounded-xl overflow-hidden border border-border/50 p-1">
+                      <input
+                        type="color"
+                        value={clubSettings.brandingColors?.accent || '#10B981'}
+                        onChange={(e) => updateClubSettings({ brandingColors: { ...(clubSettings.brandingColors || { primary: '', secondary: '' }), accent: e.target.value }})}
+                        className="w-10 h-8 rounded shrink-0 cursor-pointer bg-transparent border-0 outline-none p-0"
+                      />
+                      <input 
+                        type="text" 
+                        value={clubSettings.brandingColors?.accent || '#10B981'} 
+                        onChange={(e) => updateClubSettings({ brandingColors: { ...(clubSettings.brandingColors || { primary: '', secondary: '' }), accent: e.target.value }})}
+                        className="flex-1 bg-transparent px-2 text-sm text-white font-mono uppercase outline-none" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground mb-2 block">Public Gallery Photos</label>
+                  <div className="grid grid-cols-4 gap-2 mb-2">
+                    {(clubSettings.publicPhotos || []).slice(0, 4).map((photo, i) => (
+                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-white/10 group">
+                        <img src={photo} alt="Club photo" className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => {
+                            const newPhotos = [...(clubSettings.publicPhotos || [])];
+                            newPhotos.splice(i, 1);
+                            updateClubSettings({ publicPhotos: newPhotos });
+                          }}
+                          className="absolute inset-0 bg-red-500/80 items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                    {(clubSettings.publicPhotos || []).length < 4 && (
+                      <button 
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const f = (e.target as HTMLInputElement).files?.[0];
+                            if (f) {
+                              const r = new FileReader();
+                              r.onload = (ev) => {
+                                updateClubSettings({ publicPhotos: [...(clubSettings.publicPhotos || []), ev.target?.result as string] });
+                                toast.success('Photo added to gallery!');
+                              };
+                              r.readAsDataURL(f);
+                            }
+                          };
+                          input.click();
+                        }}
+                        className="aspect-square rounded-xl border-2 border-dashed border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors hover:border-[hsl(var(--gold))]/30 flex-col gap-1 text-[hsl(var(--gold))]/50 hover:text-[hsl(var(--gold))]"
+                      >
+                         <Plus className="w-5 h-5" />
+                         <span className="text-[10px] font-bold">Add</span>
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-500">Add up to 4 high-quality photos of your club to display on your public page.</p>
+                </div>
+              </div>
+
             </div>
           </div>
+        </div>
+
+        {/* Action Panel */}
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <button 
+            onClick={() => window.open(`https://cuemaster.vercel.app/club/${clubSettings.clubName?.toLowerCase()?.replace(/\s+/g, '-')}`, '_blank')}
+            className="p-4 rounded-3xl bg-[hsl(var(--gold))]/10 border border-[hsl(var(--gold))]/20 hover:bg-[hsl(var(--gold))]/20 transition-all group overflow-hidden relative"
+          >
+            <Globe className="w-6 h-6 text-[hsl(var(--gold))] mb-2" />
+            <h4 className="font-bold text-[hsl(var(--gold))] text-left">Preview Public Page</h4>
+            <p className="text-xs text-[hsl(var(--gold))]/70 text-left mt-1">See how customers view you</p>
+            <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-[hsl(var(--gold))] blur-3xl opacity-20 group-hover:opacity-40 transition-opacity" />
+          </button>
+          <button 
+            onClick={() => triggerInstall.trigger()}
+            className="p-4 rounded-3xl bg-secondary/50 border border-white/5 hover:bg-secondary transition-all text-left"
+          >
+            <Download className="w-6 h-6 text-white mb-2" />
+            <h4 className="font-bold text-white">Install App</h4>
+            <p className="text-xs text-gray-400 mt-1">Add to homescreen natively</p>
+          </button>
         </div>
 
         {/* GST Settings */}

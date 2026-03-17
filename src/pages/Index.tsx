@@ -3,6 +3,7 @@ import { TabType } from '@/types';
 import { MembersProvider, useMembers } from '@/contexts/MembersContext';
 import { useAuth } from '@/contexts/AuthContext';
 import TabBar from '@/components/layout/TabBar';
+import Sidebar from '@/components/layout/Sidebar';
 import MoreSheet from '@/components/layout/MoreSheet';
 import LoginScreen from '@/screens/LoginScreen';
 import NoClubScreen from '@/screens/NoClubScreen';
@@ -12,6 +13,7 @@ import MembersScreen from '@/screens/MembersScreen';
 import EventsScreen from '@/screens/EventsScreen';
 import BookingsScreen from '@/screens/BookingsScreen';
 import LeaderboardScreen from '@/screens/LeaderboardScreen';
+import MembershipsScreen from '@/screens/MembershipsScreen';
 import ReportsScreen from '@/screens/ReportsScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import HelpScreen from '@/screens/HelpScreen';
@@ -85,7 +87,7 @@ class AppErrorBoundary extends React.Component<
 
 /** Main app content — only rendered when authenticated AND inside MembersProvider */
 const AppContent = () => {
-  const { clubIdErrorType, isLoading } = useMembers();
+  const { clubIdErrorType, isLoading, clubSettings } = useMembers();
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [showMoreSheet, setShowMoreSheet] = useState(false);
   const [moreScreen, setMoreScreen] = useState<string | null>(null);
@@ -116,6 +118,7 @@ const AppContent = () => {
   const renderScreen = () => {
     if (moreScreen) {
       switch (moreScreen) {
+        case 'memberships':  return <MembershipsScreen />;
         case 'bookings':   return <BookingsScreen />;
         case 'reports':    return <ReportsScreen />;
         case 'settings':   return <SettingsScreen />;
@@ -136,15 +139,33 @@ const AppContent = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <main className="pb-20">
-        {renderScreen()}
-      </main>
-      <TabBar
+    <div className="min-h-screen bg-background flex">
+      {/* Desktop Sidebar (Left side, hidden on mobile) */}
+      <Sidebar 
         activeTab={activeTab}
-        onTabChange={(tab) => { setMoreScreen(null); setActiveTab(tab); }}
-        onMoreClick={() => setShowMoreSheet(true)}
+        onTabChange={setActiveTab}
+        activeMoreScreen={moreScreen}
+        onMoreChange={setMoreScreen}
+        brandLogo={clubSettings?.clubLogo}
+        brandName={clubSettings?.clubName}
       />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col relative w-full h-screen overflow-hidden">
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0 scrollbar-hide">
+          {renderScreen()}
+        </main>
+        
+        {/* Mobile Bottom Tab Bar (hidden on desktop) */}
+        <div className="md:hidden">
+          <TabBar
+            activeTab={activeTab}
+            onTabChange={(tab) => { setMoreScreen(null); setActiveTab(tab); }}
+            onMoreClick={() => setShowMoreSheet(true)}
+          />
+        </div>
+      </div>
+
       <MoreSheet
         isOpen={showMoreSheet}
         onClose={() => setShowMoreSheet(false)}

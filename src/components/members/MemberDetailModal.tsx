@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Member } from '@/types';
-import { X, Phone, Mail, Trophy, Target, IndianRupee, MessageCircle, Edit, Clock } from 'lucide-react';
+import { X, Phone, Mail, Trophy, Target, IndianRupee, MessageCircle, Edit, Clock, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import EditMemberModal from './EditMemberModal';
+import EditCPPModal from './EditCPPModal';
 import { useMembers } from '@/contexts/MembersContext';
 import { sendWhatsAppReminder } from '@/lib/whatsapp';
 
@@ -22,6 +23,7 @@ const membershipColors = {
 
 const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCPPModal, setShowCPPModal] = useState(false);
   const [currentMember, setCurrentMember] = useState(member);
   const { clubSettings, matchHistory, tournaments } = useMembers();
 
@@ -82,8 +84,16 @@ const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
           </div>
 
           <div className="overflow-y-auto h-[calc(100%-80px)] no-scrollbar p-4 space-y-4">
-            {/* Profile Header */}
-            <div className="glass-card p-6 text-center">
+            <div className="glass-card p-6 text-center relative overflow-hidden group">
+              <div className="absolute top-4 right-4 flex flex-col items-center">
+                 <button 
+                  onClick={() => setShowCPPModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-[hsl(var(--gold))]/10 hover:bg-[hsl(var(--gold))]/20 text-[hsl(var(--gold))] border border-[hsl(var(--gold))]/20 font-bold text-xs uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                 >
+                   <Target className="w-3.5 h-3.5" />
+                   {currentMember.cpp_points || 0} CPP
+                 </button>
+              </div>
               <div className="w-20 h-20 rounded-3xl bg-secondary flex items-center justify-center mx-auto mb-4">
                 <span className="text-3xl font-bold">{currentMember.avatar}</span>
               </div>
@@ -251,6 +261,15 @@ const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
 
             {/* Action Buttons */}
             <div className="flex gap-2">
+              {currentMember.isGuest && (
+                <button 
+                  onClick={() => setShowEditModal(true)}
+                  className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2"
+                >
+                  <Users className="w-4 h-4" />
+                  Convert to Regular
+                </button>
+              )}
               <button 
                 onClick={() => setShowEditModal(true)}
                 className="flex-1 py-3 rounded-xl bg-secondary text-foreground font-semibold flex items-center justify-center gap-2"
@@ -281,8 +300,15 @@ const MemberDetailModal = ({ member, onClose }: MemberDetailModalProps) => {
           onSave={handleEditSave}
         />
       )}
+
+      {/* Edit CPP Modal */}
+      {showCPPModal && (
+        <EditCPPModal
+          member={currentMember}
+          onClose={() => setShowCPPModal(false)}
+        />
+      )}
     </>
   );
 };
-
 export default MemberDetailModal;

@@ -48,3 +48,46 @@ export const calculateLiveBill = (
   const hours = totalMinutes / 60;
   return Math.round(hours * pricing.perHour) + itemsTotal;
 };
+
+export const generateReceiptText = (
+  clubName: string,
+  tableNumber: number,
+  tableType: string,
+  startTime: Date | null,
+  endTime: Date | null,
+  durationMs: number,
+  totalBill: number,
+  paymentMethod: string,
+  items: OrderItem[] = []
+): string => {
+  const startTimeStr = startTime ? startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+  const endTimeStr = endTime ? endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now';
+  
+  const durationMins = Math.round(durationMs / 60000);
+  const hours = Math.floor(durationMins / 60);
+  const mins = durationMins % 60;
+  const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  
+  const totalItemsAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const tableCharge = totalBill - totalItemsAmount;
+
+  let receipt = `*${clubName || 'Snook OS'} Receipt*\n`;
+  receipt += `Table ${tableNumber} - ${tableType}\n`;
+  receipt += `Started: ${startTimeStr} | Ended: ${endTimeStr}\n`;
+  receipt += `Time: ${durationStr} | Charge: ₹${Math.max(0, tableCharge)}\n`;
+  
+  if (items.length > 0) {
+    receipt += `Items:\n`;
+    items.forEach(item => {
+      receipt += `- ${item.name} (x${item.quantity}): ₹${item.price * item.quantity}\n`;
+    });
+  }
+  
+  receipt += `\n*Grand Total: ₹${totalBill}*\n`;
+  if (paymentMethod) {
+    receipt += `Payment: ${paymentMethod.toUpperCase()}\n`;
+  }
+  receipt += `Thank you! Come again!`;
+  
+  return receipt;
+};

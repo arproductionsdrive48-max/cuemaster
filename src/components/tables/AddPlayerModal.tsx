@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { X, Camera, UserPlus } from 'lucide-react';
+import { X, Camera, UserPlus, Wand2 } from 'lucide-react';
 import { MembershipType } from '@/types';
+import { generateNicknames } from '@/services/smartGenerator';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface AddPlayerModalProps {
   onClose: () => void;
@@ -20,11 +22,27 @@ const AddPlayerModal = ({ onClose, onAddPlayer }: AddPlayerModalProps) => {
   const [phone, setPhone] = useState('');
   const [isGuest, setIsGuest] = useState(true);
   const [membershipType, setMembershipType] = useState<MembershipType>('Regular');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  const handleSuggestNicknames = () => {
+    if (!name.trim()) {
+      toast.error('Please enter a name first');
+      return;
+    }
+    const results = generateNicknames(name.trim());
+    setSuggestions(results);
+    toast.success(`✨ ${results.length} nickname suggestions ready!`);
+  };
 
   const handleSubmit = () => {
-    if (name.trim()) {
+    let finalName = name.trim();
+    if (!finalName && isGuest) {
+      finalName = `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
+    if (finalName) {
       onAddPlayer({ 
-        name: name.trim(), 
+        name: finalName, 
         phone: phone || undefined, 
         isGuest,
         membershipType: isGuest ? undefined : membershipType
@@ -67,7 +85,19 @@ const AddPlayerModal = ({ onClose, onAddPlayer }: AddPlayerModalProps) => {
         {/* Form Fields */}
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Name *</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-muted-foreground block">Name *</label>
+              <button 
+                onClick={handleSuggestNicknames}
+                disabled={!name.trim()}
+                className="text-xs text-[hsl(var(--gold))] flex items-center gap-1 hover:opacity-80 disabled:opacity-50 transition-colors"
+                title="Generate snooker nicknames from the name above"
+              >
+                <Wand2 className="w-3 h-3" />
+                Suggest Nicknames
+              </button>
+            </div>
+            
             <input
               type="text"
               placeholder="Enter player name"
@@ -76,6 +106,20 @@ const AddPlayerModal = ({ onClose, onAddPlayer }: AddPlayerModalProps) => {
               className="input-glass"
               autoFocus
             />
+
+            {suggestions.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3 animate-fade-in-up">
+                {suggestions.map((suggestion, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setName(suggestion)}
+                    className="px-3 py-1.5 rounded-full bg-[hsl(var(--gold))]/10 border border-[hsl(var(--gold))]/20 text-[hsl(var(--gold))] text-xs font-medium hover:bg-[hsl(var(--gold))]/20 transition-colors"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -144,10 +188,10 @@ const AddPlayerModal = ({ onClose, onAddPlayer }: AddPlayerModalProps) => {
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!name.trim()}
+            disabled={!name.trim() && !isGuest}
             className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Add Player
+            {isGuest && !name.trim() ? 'Add Anonymous Guest' : 'Add Player'}
           </button>
         </div>
       </div>

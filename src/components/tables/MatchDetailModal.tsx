@@ -1,7 +1,9 @@
 import { MatchRecord } from '@/types';
-import { X, Clock, ShoppingBag } from 'lucide-react';
+import { X, Clock, ShoppingBag, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { generateReceiptText } from '@/lib/billing';
+import { useMembers } from '@/contexts/MembersContext';
 
 interface MatchDetailModalProps {
   match: MatchRecord;
@@ -9,6 +11,24 @@ interface MatchDetailModalProps {
 }
 
 const MatchDetailModal = ({ match, onClose }: MatchDetailModalProps) => {
+  const { clubSettings } = useMembers();
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const receiptContent = generateReceiptText(
+    clubSettings.clubName,
+    match.tableNumber,
+    'Snooker', // default as match record might not have it
+    match.sessionStartTime ? new Date(match.sessionStartTime) : null,
+    match.sessionEndTime ? new Date(match.sessionEndTime) : null,
+    match.duration,
+    match.totalBill,
+    (match as any).paymentMethod || '',
+    match.items || []
+  );
+
   const formatDuration = (ms: number) => {
     const mins = Math.floor(Math.max(0, ms) / 60000);
     if (mins < 60) return `${mins}m`;
@@ -129,6 +149,20 @@ const MatchDetailModal = ({ match, onClose }: MatchDetailModalProps) => {
             <span className="font-semibold">Total</span>
             <span className="font-bold text-[hsl(var(--gold))] text-lg">₹{match.totalBill}</span>
           </div>
+        </div>
+
+        {/* Print Button */}
+        <button
+          onClick={handlePrint}
+          className="mt-6 w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold flex items-center justify-center gap-2"
+        >
+          <Printer className="w-5 h-5" />
+          Print Receipt
+        </button>
+
+        {/* Hidden receipt for printing */}
+        <div id="receipt-text" className="print-only">
+          {receiptContent}
         </div>
       </div>
     </div>

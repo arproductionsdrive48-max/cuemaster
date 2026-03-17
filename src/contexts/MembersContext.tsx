@@ -297,24 +297,26 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
     const currentTournaments = sbTournaments ?? [];
     const nextTournaments = typeof action === 'function' ? action(currentTournaments) : action;
 
-    // Detect new tournaments (not in current list) and create them
+    // Optimistically update the local cache for instant UI feedback
+    qc.setQueryData(['tournaments', clubId], nextTournaments);
+
+    // Detect changes and persist to Supabase
     nextTournaments.forEach(next => {
       const existing = currentTournaments.find(t => t.id === next.id);
       if (!existing) {
-        // New tournament — but prefer using sbCreate from EventsScreen directly
-        // This is a safety fallback
+        // New tournament — fallback safety
         const { id: _id, registeredPlayers: _rp, status: _st, ...rest } = next;
-        sbCreateTournament(rest as any, {
-          onError: (err: any) => console.error('[Snook OS] setTournaments create error:', err),
-        });
+        sbCreateTournament(rest as any);
       } else {
-        // Update existing
-        sbUpdateTournament(next, {
-          onError: (err: any) => console.error('[Snook OS] setTournaments update error:', err),
-        });
+        // Update existing if changed (simple shallow check for brevity, or just always update)
+        // For tournaments, we usually only call this when we know something changed
+        sbUpdateTournament(next);
       }
     });
-  }, [online, sbTournaments, sbCreateTournament, sbUpdateTournament]);
+
+    // Invalidate to reconcile with server truth
+    setTimeout(() => qc.invalidateQueries({ queryKey: ['tournaments', clubId] }), 500);
+  }, [online, sbTournaments, sbCreateTournament, sbUpdateTournament, qc, clubId]);
 
   /**
    * syncTablesWithPricing — called from ManageTablesModal.

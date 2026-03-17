@@ -95,6 +95,9 @@ export default defineConfig(({ mode }) => ({
       },
     }),
   ].filter(Boolean),
+  optimizeDeps: {
+    exclude: ['@huggingface/transformers']
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

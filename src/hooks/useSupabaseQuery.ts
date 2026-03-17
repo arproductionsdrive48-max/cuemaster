@@ -110,6 +110,8 @@ export const useAddMember = (clubId: string | null) => {
           phone: member.phone || '',
           email: member.email || '',
           membership_type: member.isGuest ? 'Guest' : (member.membershipType || 'Regular'),
+          tier: member.tier || 'Regular',
+          points: 0,
           is_guest: member.isGuest ?? false,
           credit_balance: 0,
           games_played: 0,
@@ -348,6 +350,40 @@ export const useMatchHistory = (clubId: string | null) =>
     enabled: !!clubId && isSupabaseConnected(),
   });
 
+export const useUpdateMemberCPP = (clubId: string | null) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      memberId,
+      newPoints,
+      reason
+    }: {
+      memberId: string;
+      newPoints: number;
+      reason?: string;
+    }) => {
+      const sb = requireSupabase(clubId);
+      const { error } = await sb
+        .from('members')
+        .update({ cpp_points: newPoints })
+        .eq('id', memberId)
+        .eq('club_id', clubId!);
+      
+      if (error) throw error;
+      
+      // Optionally could log to a cpp_history table here if created
+    },
+    onSuccess: () => {
+      toast.success('CPP Points updated successfully!');
+      broadInvalidate(qc, clubId);
+    },
+    onError: (err: any) => {
+      console.error('[Snook OS] updateMemberCPP error:', err);
+      toast.error(`Update failed: ${err?.message ?? String(err)}`);
+    },
+  });
+};
+
 export const useAddMatchRecord = (clubId: string | null) => {
   const qc = useQueryClient();
   return useMutation({
@@ -379,6 +415,49 @@ export const useAddMatchRecord = (clubId: string | null) => {
         await new Promise(r => setTimeout(r, 1000));
         const retry = await doInsert();
         error = retry.error;
+      }
+
+      // CPP Integration: +1 participation for everyone, +3 for winner
+      if (!error && record.players) {
+        try {
+          for (const playerObj of record.players) {
+            if (!playerObj.name) continue;
+            
+            const isWinner = playerObj.result === 'win';
+            const pointsToAdd = isWinner ? 4 : 1; // 1 for playing + 3 if won
+
+            const { data: membersCheck } = await sb
+              .from('members')
+              .select('id, cpp_points, wins, losses, games_played')
+              .eq('club_id', clubId!)
+              .ilike('name', playerObj.name)
+              .limit(1)
+              .maybeSingle();
+              
+            if (membersCheck?.id) {
+              const currentCpp = membersCheck.cpp_points || 0;
+              const currentWins = membersCheck.wins || 0;
+              const currentLosses = membersCheck.losses || 0;
+              const currentGamesPlayed = membersCheck.games_played || 0;
+              
+              const isLoss = playerObj.result === 'loss';
+              
+              await sb
+                .from('members')
+                .update({ 
+                  cpp_points: currentCpp + pointsToAdd,
+                  wins: isWinner ? currentWins + 1 : currentWins,
+                  losses: isLoss ? currentLosses + 1 : currentLosses,
+                  games_played: currentGamesPlayed + 1,
+                  last_visit: new Date().toISOString()
+                })
+                .eq('id', membersCheck.id);
+            }
+          }
+        } catch (cppErr) {
+          // Swallow CPP tracking errors so the match history still saves successfully
+          console.warn('[Snook OS] CPP auto-increment failed quietly:', cppErr);
+        }
       }
 
       if (error) {
@@ -424,6 +503,7 @@ export const useAddBooking = (clubId: string | null) => {
         club_id: clubId,
         table_number: booking.tableNumber,
         customer_name: booking.customerName,
+        phone: booking.phone ?? null,
         date: booking.date instanceof Date
           ? `${booking.date.getFullYear()}-${String(booking.date.getMonth() + 1).padStart(2, '0')}-${String(booking.date.getDate()).padStart(2, '0')}`
           : booking.date,
@@ -431,6 +511,8 @@ export const useAddBooking = (clubId: string | null) => {
         end_time: booking.endTime,
         status: booking.status,
         advance_payment: booking.advancePayment ?? null,
+        discount: booking.discount ?? null,
+        note: booking.note ?? null,
       });
       if (error) throw error;
     },
@@ -461,6 +543,32 @@ export const useUpdateBookingStatus = (clubId: string | null) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['bookings', clubId] }),
     onError: (err: any) => {
       console.error('[Snook OS] updateBookingStatus error (club_id:', clubId, '):', err);
+      toast.error(`Booking update failed: ${err?.message ?? String(err)}`);
+    },
+  });
+};
+
+export const useUpdateBooking = (clubId: string | null) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (updates: { id: string } & Partial<Booking>) => {
+      const sb = requireSupabase(clubId);
+      const { id, ...rest } = updates;
+      
+      const payload: any = {};
+      if (rest.status) payload.status = rest.status;
+      if (rest.note !== undefined) payload.note = rest.note;
+      
+      const { error } = await sb
+        .from('bookings')
+        .update(payload)
+        .eq('id', id)
+        .eq('club_id', clubId!);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['bookings', clubId] }),
+    onError: (err: any) => {
+      console.error('[Snook OS] updateBooking error:', err);
       toast.error(`Booking update failed: ${err?.message ?? String(err)}`);
     },
   });
@@ -503,6 +611,22 @@ const toTimestampString = (d: Date | string | null | undefined): string | null =
   }
 };
 
+// Helper: robustly parse Supabase timestamps to guarantee UTC if offset is stripped natively by DB
+const parseSupabaseDate = (dateString: string | Date | null | undefined): Date | null => {
+  if (!dateString) return null;
+  if (dateString instanceof Date) return dateString;
+  
+  if (typeof dateString === 'string') {
+    // If it lacks "Z" and any "+00:00" offset, JS thinks it's local time. Force UTC.
+    if (!dateString.includes('Z') && !dateString.match(/[+-]\d{2}:\d{2}(:\d{2})?$/)) {
+      const formatted = dateString.includes('T') ? dateString : dateString.replace(' ', 'T');
+      return new Date(formatted + 'Z');
+    }
+    return new Date(dateString);
+  }
+  return null;
+};
+
 export const useCreateTournament = (clubId: string | null) => {
   const qc = useQueryClient();
   return useMutation({
@@ -512,6 +636,7 @@ export const useCreateTournament = (clubId: string | null) => {
       // date column is TIMESTAMPTZ — send full ISO string
       const tournamentDate = tournament.date instanceof Date ? tournament.date : new Date(tournament.date);
       const dateStr = tournamentDate.toISOString();
+      const endDateStr = tournament.endDate ? (tournament.endDate instanceof Date ? tournament.endDate : new Date(tournament.endDate)).toISOString() : null;
       // start_time: convert "HH:MM" to full ISO timestamp using the tournament date
       const startTimeStr = tournament.startTime
         ? toTimestampString(new Date(`${toDateString(tournamentDate)}T${tournament.startTime}:00`))
@@ -524,6 +649,7 @@ export const useCreateTournament = (clubId: string | null) => {
         name: tournament.name,
         type: tournament.type,
         date: dateStr,
+        end_date: endDateStr,
         start_time: startTimeStr,
         location: tournament.location,
         entry_fee: tournament.entryFee,
@@ -531,6 +657,7 @@ export const useCreateTournament = (clubId: string | null) => {
         prize_distribution: tournament.prizeDistribution ?? null,
         max_players: tournament.maxPlayers,
         registered_players: [],
+        waitlist: [],
         status: 'upcoming',
         description: tournament.description ?? null,
         tables: tournament.tables ?? null,
@@ -576,6 +703,7 @@ export const useUpdateTournament = (clubId: string | null) => {
       // date column is TIMESTAMPTZ — send full ISO string
       const tournamentDate = tournament.date instanceof Date ? tournament.date : new Date(tournament.date);
       const dateStr = tournamentDate.toISOString();
+      const endDateStr = tournament.endDate ? (tournament.endDate instanceof Date ? tournament.endDate : new Date(tournament.endDate)).toISOString() : null;
       // start_time: convert "HH:MM" to full ISO timestamp using the tournament date
       const startTimeStr = tournament.startTime
         ? toTimestampString(new Date(`${toDateString(tournamentDate)}T${tournament.startTime}:00`))
@@ -587,6 +715,7 @@ export const useUpdateTournament = (clubId: string | null) => {
           name: tournament.name,
           type: tournament.type,
           date: dateStr,
+          end_date: endDateStr,
           start_time: startTimeStr,
           location: tournament.location,
           entry_fee: tournament.entryFee,
@@ -594,6 +723,7 @@ export const useUpdateTournament = (clubId: string | null) => {
           prize_distribution: tournament.prizeDistribution ?? null,
           max_players: tournament.maxPlayers,
           registered_players: tournament.registeredPlayers,
+          waitlist: tournament.waitlist ?? [],
           status: tournament.status,
           description: tournament.description ?? null,
           tables: tournament.tables ?? null,
@@ -616,15 +746,18 @@ export const useUpdateTournament = (clubId: string | null) => {
 
       if (error) {
         console.error('[Snook OS] updateTournament update error:', error);
-        toast.error(`Update tournament failed: ${error.message} — Check timestamp format`);
+        // Distinguish between timeout and format errors
+        const isTimeout = error.message.includes('timeout') || error.code === '57014';
+        toast.error(`Update tournament failed: ${error.message}${isTimeout ? '' : ' — Check timestamp format'}`);
         throw error;
       }
     },
-    onSuccess: () => broadInvalidate(qc, clubId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tournaments', clubId] }),
     onError: (err: any) => {
       console.error('[Snook OS] updateTournament error (club_id:', clubId, '):', err);
       if (err?.code !== 'PGRST204') {
-        toast.error(`Update tournament failed: ${err?.message ?? String(err)}`);
+        const isTimeout = err?.message?.includes('timeout') || err?.code === '57014';
+        toast.error(`Update tournament failed: ${err?.message ?? String(err)}${isTimeout ? '' : ' — Check timestamp format'}`);
       }
     },
   });
@@ -987,12 +1120,45 @@ export const useDeletePromotionTemplate = (clubId: string | null) => {
   });
 };
 
+// ─── QR TOKENS ──────────────────────────────────────────────────────────────
+export const useGenerateQRToken = (clubId: string | null) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (tableId: string) => {
+      const sb = requireSupabase(clubId);
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      
+      const { data, error } = await sb
+        .from('table_qr_tokens')
+        .insert({
+          table_id: tableId,
+          club_id: clubId,
+          expires_at: expiresAt,
+          used: false
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onError: (err: any) => {
+      console.error('[Snook OS] generateQRToken error:', err);
+      toast.error(`Failed to generate QR: ${err?.message ?? String(err)}`);
+    },
+  });
+};
+
 // ─── MAPPERS ─────────────────────────────────────────────────────────────────
 const mapDbMember = (row: any): Member => ({
   id: row.id,
   name: row.name,
   avatar: row.avatar || row.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || '?',
   membershipType: row.membership_type || 'Regular',
+  tier: row.membership_tier || row.tier || 'Regular',
+  points: Number(row.cpp_points || row.points) || 0,
+  cpp_points: Number(row.cpp_points) || 0,
+  loyalty_points: Number(row.loyalty_points) || 0,
   creditBalance: Number(row.credit_balance) || 0,
   lastVisit: new Date(row.last_visit || Date.now()),
   gamesPlayed: row.games_played || 0,
@@ -1009,6 +1175,10 @@ const mapMemberToDb = (member: Partial<Member>) => {
   if (member.name !== undefined) mapped.name = member.name;
   if (member.avatar !== undefined) mapped.avatar = member.avatar;
   if (member.membershipType !== undefined) mapped.membership_type = member.membershipType;
+  if (member.tier !== undefined) mapped.membership_tier = member.tier;
+  if (member.points !== undefined) mapped.cpp_points = member.points;
+  if (member.cpp_points !== undefined) mapped.cpp_points = member.cpp_points;
+  if (member.loyalty_points !== undefined) mapped.loyalty_points = member.loyalty_points;
   if (member.creditBalance !== undefined) mapped.credit_balance = member.creditBalance;
   if (member.phone !== undefined) mapped.phone = member.phone;
   if (member.email !== undefined) mapped.email = member.email;
@@ -1043,7 +1213,7 @@ const mapDbTable = (row: any): TableSession => {
     // Use session status if available, otherwise default free
     status: session ? (row.status || 'occupied') : 'free',
     players: session?.players || [],
-    startTime: session?.start_time ? new Date(session.start_time) : null,
+    startTime: parseSupabaseDate(session?.start_time),
     pausedTime: session?.paused_time || 0,
     items: session?.items || [],
     totalBill: Number(session?.total_bill) || 0,
@@ -1056,9 +1226,9 @@ const mapDbMatch = (row: any): MatchRecord => ({
   id: row.id,
   tableNumber: row.table_number,
   players: row.players || [],
-  date: new Date(row.date),
-  sessionStartTime: row.session_start_time ? new Date(row.session_start_time) : undefined,
-  sessionEndTime: row.session_end_time ? new Date(row.session_end_time) : undefined,
+  date: parseSupabaseDate(row.date) || new Date(),
+  sessionStartTime: parseSupabaseDate(row.session_start_time) || undefined,
+  sessionEndTime: parseSupabaseDate(row.session_end_time) || undefined,
   duration: row.duration || 0,
   billingMode: row.billing_mode || 'hourly',
   totalBill: Number(row.total_bill) || 0,
@@ -1072,11 +1242,14 @@ const mapDbBooking = (row: any): Booking => ({
   id: row.id,
   tableNumber: row.table_number,
   customerName: row.customer_name,
+  phone: row.phone,
   date: new Date(row.date + 'T00:00:00'),
   startTime: row.start_time,
   endTime: row.end_time,
   status: row.status,
   advancePayment: row.advance_payment ? Number(row.advance_payment) : undefined,
+  discount: row.discount ? Number(row.discount) : undefined,
+  note: row.note,
 });
 
 const mapDbTournament = (row: any): Tournament => {
@@ -1096,6 +1269,7 @@ const mapDbTournament = (row: any): Tournament => {
     name: row.name,
     type: row.type,
     date: new Date(row.date),
+    endDate: row.end_date ? new Date(row.end_date) : undefined,
     startTime,
     location: row.location,
     entryFee: Number(row.entry_fee) || 0,
@@ -1103,6 +1277,7 @@ const mapDbTournament = (row: any): Tournament => {
     prizeDistribution: row.prize_distribution,
     maxPlayers: row.max_players || 0,
     registeredPlayers: row.registered_players || [],
+    waitlist: row.waitlist || [],
     status: row.status || 'upcoming',
     description: row.description,
     tables: row.tables,
