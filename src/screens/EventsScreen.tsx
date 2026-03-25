@@ -20,7 +20,7 @@ import {
 type FilterType = 'all' | TournamentType | 'completed';
 
 const EventsScreen = () => {
-  const { tournaments, setTournaments, clubId, isOnline } = useMembers();
+  const { tournaments, setTournaments, clubId, isOnline, updateMemberPoints, members, updateMember } = useMembers();
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -178,6 +178,31 @@ const EventsScreen = () => {
           nextMatch.player2 = match.winner;
         }
         matches[nextMatchIndex] = nextMatch;
+      }
+    }
+    
+    // — AWARD CPP POINTS —
+    if (updates.status === 'completed' && updates.winner) {
+      // Tournament Match Win: +20 win + 1 play = +21
+      updateMemberPoints(updates.winner, 21);
+      
+      // Tournament Match Loss: +1 play
+      const matchBeforeUpdates = tournament.bracket.matches[matchIndex];
+      const loser = matchBeforeUpdates.player1 === updates.winner ? matchBeforeUpdates.player2 : matchBeforeUpdates.player1;
+      if (loser && loser !== 'Bye') {
+        updateMemberPoints(loser, 1);
+      }
+
+      const finalHighBreakPlayer = updates.highestBreakPlayer || matchBeforeUpdates.highestBreakPlayer;
+      const finalHighBreakValue = updates.highestBreakValue || matchBeforeUpdates.highestBreakValue;
+      if (finalHighBreakPlayer) {
+        updateMemberPoints(finalHighBreakPlayer, 5);
+        
+        // Also update personal best if applicable
+        const member = members.find(m => m.name === finalHighBreakPlayer);
+        if (member && finalHighBreakValue && finalHighBreakValue > (member.highestBreak || 0)) {
+          updateMember(member.id, { highestBreak: finalHighBreakValue });
+        }
       }
     }
     

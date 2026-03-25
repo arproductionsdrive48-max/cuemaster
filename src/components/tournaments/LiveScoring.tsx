@@ -235,6 +235,40 @@ const LiveScoring: React.FC<LiveScoringProps> = ({ tournament, onClose, onUpdate
                     </div>
 
                   </div>
+
+                  {/* Match highest break input */}
+                  <div className="px-4 pb-4 border-t border-white/5 bg-black/20">
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Match Highest Break</span>
+                      <div className="flex gap-2">
+                        {[match.player1, match.player2].map(name => (
+                          <button
+                            key={name || 'none'}
+                            onClick={() => onUpdateMatch(match.id, { highestBreakPlayer: match.highestBreakPlayer === name ? undefined : (name || undefined) })}
+                            className={cn(
+                              "px-3 py-1 rounded-lg text-[10px] font-bold border transition-all",
+                              match.highestBreakPlayer === name 
+                                ? "bg-[hsl(var(--gold))]/10 border-[hsl(var(--gold))]/30 text-[hsl(var(--gold))]" 
+                                : "bg-white/5 border-white/5 text-gray-500"
+                            )}
+                          >
+                            {name?.split(' ')[0]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {match.highestBreakPlayer && (
+                      <div className="flex items-center gap-3 animate-in fade-in slide-in-from-top-1">
+                        <input
+                          type="number"
+                          placeholder="Break Score"
+                          value={match.highestBreakValue || ''}
+                          onChange={(e) => onUpdateMatch(match.id, { highestBreakValue: e.target.value ? Number(e.target.value) : undefined })}
+                          className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-sm font-bold text-white outline-none focus:border-[hsl(var(--gold))]/50 transition-all"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* ── Highlights Panel (auto-shown after any score update) ── */}

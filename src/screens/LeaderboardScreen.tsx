@@ -35,6 +35,23 @@ const LeaderboardScreen = ({ onBack }: LeaderboardScreenProps) => {
             isAfter(mh.date, filterDate) &&
             mh.players.some(p => p.name === m.name)
           );
+          // Calculate from tournament brackets within time period
+          const tournamentPoints = tournaments.reduce((acc, t) => {
+            if (!t.bracket || !t.date || !isAfter(new Date(t.date), filterDate)) return acc;
+            const playerBracketMatches = t.bracket.matches.filter(match => 
+              match.status === 'completed' && 
+              (match.player1 === m.name || match.player2 === m.name)
+            );
+            return acc + playerBracketMatches.reduce((pAcc, match) => {
+              let matchPoints = 0;
+              if (match.winner === m.name) matchPoints += 21;
+              else if (match.player1 !== 'Bye' && match.player2 !== 'Bye' && match.status === 'completed') matchPoints += 1;
+              
+              if (match.highestBreakPlayer === m.name) matchPoints += 5;
+              return pAcc + matchPoints;
+            }, 0);
+          }, 0);
+
           const wins = playerMatches.filter(mh => 
             mh.players.find(p => p.name === m.name)?.result === 'win'
           ).length;
@@ -42,10 +59,18 @@ const LeaderboardScreen = ({ onBack }: LeaderboardScreenProps) => {
             mh.players.find(p => p.name === m.name)?.result === 'loss'
           ).length;
           const games = wins + losses;
+          
+          const matchHistoryPoints = playerMatches.reduce((acc, mh) => {
+            const playerInfo = mh.players.find(p => p.name === m.name);
+            let pPoints = playerInfo?.result === 'win' ? 4 : 1;
+            if (mh.highestBreakPlayer === m.name) pPoints += 5;
+            return acc + pPoints;
+          }, 0);
+
           return {
             ...m,
             winRate: games > 0 ? Math.round((wins / games) * 100) : 0,
-            points: (wins * 4) + (losses * 1),
+            points: matchHistoryPoints + tournamentPoints,
             wins,
             losses,
             gamesPlayed: games,

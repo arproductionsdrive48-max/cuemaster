@@ -124,6 +124,8 @@ export interface MatchRecord {
   splitCount?: number;
   qrUsed?: boolean;
   items?: OrderItem[]; // session POS items
+  highestBreakPlayer?: string;
+  highestBreakValue?: number;
 }
 
 export interface Booking {
@@ -215,6 +217,8 @@ export interface TournamentBracketMatch {
   status: 'pending' | 'live' | 'completed';
   winner?: string;
   liveLink?: string;
+  highestBreakPlayer?: string;
+  highestBreakValue?: number;
 }
 
 export interface TournamentMatch {

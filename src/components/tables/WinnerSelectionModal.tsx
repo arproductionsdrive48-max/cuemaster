@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 interface WinnerSelectionModalProps {
   table: TableSession;
   onClose: () => void;
-  onConfirm: (winnersMap: Record<string, 'win' | 'loss' | 'draw'>) => void;
+  onConfirm: (winnersMap: Record<string, 'win' | 'loss' | 'draw'>, highestBreakPlayer?: string, highestBreakValue?: number) => void;
   onAddPlayer: () => void;
 }
 
@@ -16,6 +16,8 @@ const WinnerSelectionModal = ({ table, onClose, onConfirm, onAddPlayer }: Winner
   const { members } = useMembers();
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
   const [isDraw, setIsDraw] = useState(false);
+  const [highestBreakPlayer, setHighestBreakPlayer] = useState<string | null>(null);
+  const [highestBreakValue, setHighestBreakValue] = useState<string>('');
 
   const noPlayers = table.players.length === 0;
 
@@ -35,7 +37,7 @@ const WinnerSelectionModal = ({ table, onClose, onConfirm, onAddPlayer }: Winner
       }
     });
 
-    onConfirm(resultsMap);
+    onConfirm(resultsMap, highestBreakPlayer || undefined, highestBreakValue ? Number(highestBreakValue) : undefined);
   };
 
   return (
@@ -124,6 +126,42 @@ const WinnerSelectionModal = ({ table, onClose, onConfirm, onAddPlayer }: Winner
               >
                 🤝 Mark as Draw / No Winner
               </button>
+
+              {/* Highest Break Section */}
+              <div className="bg-secondary/30 rounded-2xl p-4 mb-5 border border-white/5">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Highest Break (Optional)</span>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    {table.players.map(player => (
+                      <button
+                        key={player}
+                        onClick={() => setHighestBreakPlayer(highestBreakPlayer === player ? null : player)}
+                        className={cn(
+                          "flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold border transition-all truncate",
+                          highestBreakPlayer === player 
+                            ? "bg-[hsl(var(--gold))]/10 border-[hsl(var(--gold))]/40 text-[hsl(var(--gold))]" 
+                            : "bg-black/20 border-white/5 text-gray-500 hover:text-gray-300"
+                        )}
+                      >
+                        {player.split(' ')[0]}
+                      </button>
+                    ))}
+                  </div>
+                  {highestBreakPlayer && (
+                    <div className="relative animate-in fade-in slide-in-from-top-1 duration-200">
+                      <input
+                        type="number"
+                        placeholder="Enter break score (e.g. 42)"
+                        value={highestBreakValue}
+                        onChange={(e) => setHighestBreakValue(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-[hsl(var(--gold))]/50 transition-all placeholder:text-gray-600"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Confirm */}
               <button

@@ -94,6 +94,7 @@ interface MembersContextType {
   addMatchRecord: (record: Omit<MatchRecord, 'id'>) => void;
   tournaments: Tournament[];
   setTournaments: React.Dispatch<React.SetStateAction<Tournament[]>>;
+  updateMemberPoints: (memberName: string, pointsToAdd: number) => void;
   /** Sync physical table list changes from ManageTablesModal to Supabase */
   syncTablesWithPricing: (pricing: IndividualTablePricing[]) => void;
   clubId: string | null;
@@ -418,6 +419,18 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
     setTimeout(() => qc.invalidateQueries({ queryKey: ['tournaments', clubId] }), 500);
   }, [online, sbTournaments, sbCreateTournament, sbUpdateTournament, qc, clubId]);
 
+  const updateMemberPoints = useCallback((memberName: string, pointsToAdd: number) => {
+    if (!online) return;
+    const member = (sbMembers ?? []).find(m => m.name.toLowerCase() === memberName.toLowerCase());
+    if (member) {
+      const currentPoints = member.cpp_points || 0;
+      updateMember(member.id, { cpp_points: currentPoints + pointsToAdd });
+      console.log(`[Snook OS] CPP Updated: ${member.name} +${pointsToAdd} (New Total: ${currentPoints + pointsToAdd})`);
+    } else {
+      console.warn(`[Snook OS] Cannot update CPP: Member "${memberName}" not found`);
+    }
+  }, [online, sbMembers, updateMember]);
+
   /**
    * syncTablesWithPricing — called from ManageTablesModal.
    * Compares the new pricing list against existing Supabase tables and:
@@ -502,6 +515,7 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
       tables, setTables, updateTable,
       matchHistory, addMatchRecord,
       tournaments, setTournaments,
+      updateMemberPoints,
       syncTablesWithPricing,
       clubId,
       isOnline: online,

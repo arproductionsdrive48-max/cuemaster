@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 const TablesScreen = () => {
-  const { tables, updateTable, clubSettings, addMatchRecord, updateMember, members, isOnline } = useMembers();
+  const { tables, updateTable, clubSettings, addMatchRecord, updateMember, members, updateMemberPoints, isOnline } = useMembers();
   const [selectedTable, setSelectedTable] = useState<TableSession | null>(null);
   const [paymentTable, setPaymentTable] = useState<TableSession | null>(null);
   const [winnerTable, setWinnerTable] = useState<TableSession | null>(null);
@@ -33,12 +33,18 @@ const TablesScreen = () => {
     setWinnerTable(table);
   };
 
-  const handleWinnerConfirm = (winnersMap: Record<string, 'win' | 'loss' | 'draw'>) => {
+  const handleWinnerConfirm = (winnersMap: Record<string, 'win' | 'loss' | 'draw'>, highestBreakPlayer?: string, highestBreakValue?: number) => {
     if (!winnerTable) return;
-    const tableWithWinners: TableSession & { _winnersMap?: Record<string, 'win' | 'loss' | 'draw'> } = {
+    const tableWithWinners: TableSession & { 
+      _winnersMap?: Record<string, 'win' | 'loss' | 'draw'>;
+      _highestBreakPlayer?: string;
+      _highestBreakValue?: number;
+    } = {
       ...winnerTable,
       // @ts-ignore
       _winnersMap: winnersMap,
+      _highestBreakPlayer: highestBreakPlayer,
+      _highestBreakValue: highestBreakValue,
     };
     setWinnerTable(null);
     setPaymentTable(tableWithWinners);
@@ -64,12 +70,32 @@ const TablesScreen = () => {
         totalBill: paymentTable.totalBill,
         gstAmount,
         items: paymentTable.items.length > 0 ? paymentTable.items : undefined,
+        highestBreakPlayer: (paymentTable as any)._highestBreakPlayer,
+        highestBreakValue: (paymentTable as any)._highestBreakValue,
         ...(paymentInfo && {
           paymentMethod: paymentInfo.paymentMethod,
           splitCount: paymentInfo.splitCount,
           qrUsed: paymentInfo.qrUsed,
         }),
       } as any);
+
+      // — AWARD CPP POINTS —
+      paymentTable.players.forEach(name => {
+        const result = winnersMap[name] || 'draw';
+        let points = result === 'win' ? 4 : 1; // +3 win, +1 play
+        
+        // Add highest break bonus
+        if ((paymentTable as any)._highestBreakPlayer === name) {
+          points += 5;
+          const breakValue = (paymentTable as any)._highestBreakValue;
+          const member = members.find(m => m.name === name);
+          if (member && breakValue && breakValue > (member.highestBreak || 0)) {
+            updateMember(member.id, { highestBreak: breakValue });
+          }
+        }
+        
+        updateMemberPoints(name, points);
+      });
       // Reset table to free state in Supabase (clears active session)
       const clearedTable: TableSession = {
         ...paymentTable,
