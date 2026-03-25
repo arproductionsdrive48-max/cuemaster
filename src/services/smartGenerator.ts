@@ -46,9 +46,10 @@ export function generateNicknames(fullName: string): string[] {
   const last = parts.length > 1 ? parts[parts.length - 1] : '';
   const initials = parts.map(p => p[0]?.toUpperCase()).join('');
 
-  const shuffledAdjectives = seededShuffle(SNOOKER_ADJECTIVES, fullName);
-  const shuffledSuffixes = seededShuffle(SNOOKER_SUFFIXES, fullName + '2');
-  const shuffledVerbs = seededShuffle(SNOOKER_VERBS, fullName + '3');
+  const seed = fullName + Math.random().toString();
+  const shuffledAdjectives = seededShuffle(SNOOKER_ADJECTIVES, seed);
+  const shuffledSuffixes = seededShuffle(SNOOKER_SUFFIXES, seed + '2');
+  const shuffledVerbs = seededShuffle(SNOOKER_VERBS, seed + '3');
 
   const suggestions = new Set<string>();
 
@@ -110,9 +111,10 @@ export function generateTournamentSuggestions(
   if (lowerFormat === '8ball' || lowerFormat === '8 ball') cleanFormat = '8-Ball';
   if (lowerFormat === '9ball' || lowerFormat === '9 ball') cleanFormat = '9-Ball';
 
-  const shuffledAdj = seededShuffle(TOURNAMENT_ADJECTIVES, cleanFormat + Date.now().toString().slice(-4));
-  const shuffledNouns = seededShuffle(TOURNAMENT_NOUNS, cleanFormat + 'n');
-  const shuffledPrefixes = seededShuffle(TOURNAMENT_PREFIXES, cleanFormat + 'p');
+  const seed = cleanFormat + Math.random().toString();
+  const shuffledAdj = seededShuffle(TOURNAMENT_ADJECTIVES, seed);
+  const shuffledNouns = seededShuffle(TOURNAMENT_NOUNS, seed + 'n');
+  const shuffledPrefixes = seededShuffle(TOURNAMENT_PREFIXES, seed + 'p');
   const year = new Date().getFullYear();
   const feeText = entryFee && entryFee > 0 ? `Entry fee: ₹${entryFee}.` : 'Free to enter.';
   const locText = location ? `Held at ${location}.` : 'Held at the club.';

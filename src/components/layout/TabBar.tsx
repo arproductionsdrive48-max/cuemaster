@@ -18,8 +18,8 @@ const tabs: { id: TabType | 'more'; icon: React.ComponentType<{ className?: stri
 
 const TabBar = ({ activeTab, onTabChange, onMoreClick }: TabBarProps) => {
   return (
-    <nav className="tab-bar pb-safe">
-      <div className="flex items-center justify-around h-16 px-2">
+    <nav className="tab-bar pb-safe md:hidden">
+      <div className="flex items-center justify-around h-16 px-1">
         {tabs.map(({ id, icon: Icon, label }) => {
           const isActive = activeTab === id;
           const isMore = id === 'more';
@@ -27,20 +27,24 @@ const TabBar = ({ activeTab, onTabChange, onMoreClick }: TabBarProps) => {
             <button
               key={id}
               onClick={() => isMore ? onMoreClick() : onTabChange(id as TabType)}
-              className={cn(
-                'flex flex-col items-center justify-center w-14 h-12 rounded-xl transition-all duration-200',
-                isActive 
-                  ? 'text-[hsl(var(--gold))]' 
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
+              className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-all duration-200 relative"
             >
-              <Icon className={cn(
-                'w-6 h-6 transition-all duration-200',
-                isActive && 'scale-110'
-              )} />
+              {/* Active glow pill */}
+              {isActive && (
+                <span className="absolute top-2 w-10 h-1 rounded-full bg-[hsl(var(--gold))] opacity-80 shadow-[0_0_8px_hsl(var(--gold)/0.8)]" />
+              )}
+              <div className={cn(
+                'w-10 h-9 flex items-center justify-center rounded-xl transition-all duration-200 mt-1',
+                isActive ? 'bg-[hsl(var(--gold))]/10' : ''
+              )}>
+                <Icon className={cn(
+                  'w-5 h-5 transition-all duration-200',
+                  isActive ? 'text-[hsl(var(--gold))] scale-110' : 'text-gray-500'
+                )} />
+              </div>
               <span className={cn(
-                'text-[10px] mt-0.5 font-medium',
-                isActive ? 'opacity-100' : 'opacity-70'
+                'text-[9px] font-semibold uppercase tracking-wider transition-all duration-200',
+                isActive ? 'text-[hsl(var(--gold))]' : 'text-gray-600'
               )}>
                 {label}
               </span>

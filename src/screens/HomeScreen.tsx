@@ -19,7 +19,7 @@ interface HomeScreenProps {
 }
 
 const HomeScreen = ({ onNavigate }: HomeScreenProps) => {
-  const { members, clubSettings, tables, isOnline } = useMembers();
+  const { members, clubSettings, updateClubSettings, tables, isOnline } = useMembers();
 
   const pricing = {
     perHour: clubSettings.tablePricing.perHour,
@@ -88,28 +88,39 @@ const HomeScreen = ({ onNavigate }: HomeScreenProps) => {
             </div>
           )}
 
-          {/* Club Status Banner */}
-          <div className={cn(
-            "glass-card p-4 flex items-center justify-between",
-            clubSettings.isOpen ? "border-available/30" : "border-paused/30"
-          )}>
+          {/* Club Status Banner — tap to toggle */}
+          <button
+            onClick={() => updateClubSettings({ isOpen: !clubSettings.isOpen })}
+            className={cn(
+              "w-full glass-card p-4 flex items-center justify-between transition-all active:scale-[0.99]",
+              clubSettings.isOpen ? "border-emerald-500/30" : "border-gray-600/30"
+            )}
+          >
             <div className="flex items-center gap-3">
               <div className={cn(
-                "w-3 h-3 rounded-full animate-pulse",
-                clubSettings.isOpen ? "bg-available" : "bg-paused"
+                "w-3 h-3 rounded-full",
+                clubSettings.isOpen ? "bg-emerald-400 animate-pulse" : "bg-gray-600"
               )} />
-              <div>
-                <p className="font-semibold">Club Status</p>
+              <div className="text-left">
+                <p className="font-semibold text-sm">Club Status</p>
                 <p className={cn(
-                  "text-sm",
-                  clubSettings.isOpen ? "text-available" : "text-paused"
+                  "text-xs",
+                  clubSettings.isOpen ? "text-emerald-400" : "text-gray-500"
                 )}>
-                  {clubSettings.isOpen ? 'Open for Business' : 'Currently Closed'}
+                  {clubSettings.isOpen ? 'Open for Business — tap to close' : 'Currently Closed — tap to open'}
                 </p>
               </div>
             </div>
-            <Clock className="w-5 h-5 text-muted-foreground" />
-          </div>
+            <div className={cn(
+              'w-11 h-6 rounded-full p-0.5 transition-all duration-300',
+              clubSettings.isOpen ? 'bg-emerald-500' : 'bg-gray-700'
+            )}>
+              <div className={cn(
+                'w-5 h-5 rounded-full bg-white shadow transition-transform duration-300',
+                clubSettings.isOpen ? 'translate-x-5' : 'translate-x-0'
+              )} />
+            </div>
+          </button>
 
           {/* Quick Stats */}
           <div className="grid grid-cols-2 gap-3">
@@ -208,6 +219,11 @@ const HomeScreen = ({ onNavigate }: HomeScreenProps) => {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Version watermark */}
+        <div className="pt-2 pb-4 flex justify-center">
+          <p className="text-[10px] text-gray-800 uppercase tracking-widest font-medium">Snook OS v2.0 • Professional Club Manager</p>
         </div>
       </div>
 

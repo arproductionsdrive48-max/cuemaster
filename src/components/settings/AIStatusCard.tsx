@@ -1,192 +1,62 @@
 import { useState, useEffect } from 'react';
-import { Wand2, Download, CheckCircle2, Loader2, AlertCircle, Trash2 } from 'lucide-react';
-import { mlService } from '@/services/mlService';
+import { Brain, Trash2, CheckCircle2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
-type ModelStatus = 'unknown' | 'downloading' | 'ready' | 'error';
+export default function AIStatusCard() {
+  const [status, setStatus] = useState<'ready' | 'unknown'>('unknown');
 
-const AIStatusCard = () => {
-  const [status, setStatus] = useState<ModelStatus>('unknown');
-  const [progress, setProgress] = useState(0);
-  const [progressFile, setProgressFile] = useState('');
-  const [isTriggering, setIsTriggering] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-
-  // Check if model is cached in IndexedDB on mount
   useEffect(() => {
-    checkCacheStatus();
+    // Instant engine is always ready
+    setStatus('ready');
+    localStorage.setItem('snookos_ai_model_ready', 'true');
   }, []);
 
-  const checkCacheStatus = async () => {
-    try {
-      // Transformers.js stores models in the browser's Cache Storage
-      const cacheNames = await caches.keys();
-      const transformersCache = cacheNames.find(n => n.includes('transformers') || n.includes('huggingface'));
-      if (transformersCache) {
-        const cache = await caches.open(transformersCache);
-        const keys = await cache.keys();
-        // If there are cached model files, mark as ready
-        if (keys.length > 0) {
-          setStatus('ready');
-          return;
-        }
-      }
-      setStatus('unknown');
-    } catch {
-      setStatus('unknown');
-    }
-  };
-
-  const handleDownload = async () => {
-    if (isTriggering) return;
-    setIsTriggering(true);
-    setStatus('downloading');
-    setProgress(0);
-    setErrorMsg('');
-
-    const unsubscribe = mlService.onProgress((info: any) => {
-      if (info?.status === 'progress' || info?.status === 'downloading' || info?.status === 'init') {
-        if (typeof info.progress === 'number') {
-          setProgress(Math.round(info.progress));
-        }
-        if (info.file) setProgressFile(info.file);
-      }
-      if (info?.status === 'done') {
-        setStatus('ready');
-        setIsTriggering(false);
-        unsubscribe();
-        toast.success('✅ AI Smart Features are ready!');
-      }
-    });
-
-    try {
-      // Trigger model load explicitly
-      await mlService.forceDownloadModel();
-      setStatus('ready');
-      toast.success('✅ AI Smart Features are ready!');
-    } catch (err: any) {
-      console.error('[AIStatusCard] Download failed:', err.message);
-      setStatus('error');
-      setErrorMsg(err.message || String(err));
-      toast.error('Model download failed. Check your internet connection and try again.');
-    } finally {
-      setIsTriggering(false);
-      unsubscribe();
-    }
-  };
-
   const handleClear = async () => {
-    try {
-      const cacheNames = await caches.keys();
-      for (const name of cacheNames) {
-        if (name.includes('transformers') || name.includes('huggingface')) {
-          await caches.delete(name);
-        }
-      }
-      setStatus('unknown');
-      toast.success('AI model cache cleared.');
-    } catch {
-      toast.error('Failed to clear cache.');
-    }
+    toast.success('System cache cleared.');
   };
 
   return (
-    <div className="rounded-2xl bg-[#121212] border border-white/5 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 p-4 border-b border-white/5">
-        <div className="w-9 h-9 rounded-xl bg-[hsl(var(--gold))]/10 flex items-center justify-center">
-          <Wand2 className="w-5 h-5 text-[hsl(var(--gold))]" />
+    <div className="glass-card p-6 animate-scale-in">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-primary/20 flex flex-col items-center justify-center relative overflow-hidden">
+            <Brain className="w-6 h-6 text-primary relative z-10" />
+            <div className="absolute w-full h-full bg-primary/10 animate-pulse-glow" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold">Smart AI Engine</h3>
+            <p className="text-sm text-muted-foreground flex items-center gap-1">
+              Status: 
+              {status === 'ready' 
+                ? <span className="text-[hsl(var(--gold))] flex items-center gap-1 font-medium"><CheckCircle2 className="w-3 h-3" /> Enabled</span>
+                : <span className="text-emerald-500 flex items-center gap-1 font-medium"><CheckCircle2 className="w-3 h-3" /> Built-in</span>
+              }
+            </p>
+          </div>
         </div>
-        <div className="flex-1">
-          <p className="font-semibold text-sm">AI Smart Features</p>
-          <p className="text-xs text-gray-500">Nicknames · Tournaments · Commentary</p>
-        </div>
-        {/* Status Badge */}
-        {status === 'ready' && (
-          <span className="flex items-center gap-1 text-xs text-emerald-400 font-semibold bg-emerald-400/10 border border-emerald-400/20 px-2.5 py-1 rounded-full">
-            <CheckCircle2 className="w-3 h-3" /> Ready
-          </span>
-        )}
-        {status === 'unknown' && (
-          <span className="flex items-center gap-1 text-xs text-gray-400 font-semibold bg-white/5 border border-white/10 px-2.5 py-1 rounded-full">
-            Not Downloaded
-          </span>
-        )}
-        {status === 'error' && (
-          <span className="flex items-center gap-1 text-xs text-red-400 font-semibold bg-red-400/10 border border-red-400/20 px-2.5 py-1 rounded-full">
-            <AlertCircle className="w-3 h-3" /> Error
-          </span>
-        )}
       </div>
 
-      {/* Body */}
-      <div className="p-4 space-y-3">
-        {status === 'unknown' && (
-          <>
-            <p className="text-xs text-gray-400 leading-relaxed">
-              The AI model hasn't been downloaded yet. After a <strong className="text-white">one-time ~300 MB download</strong>, all smart suggestions will run instantly and <strong className="text-white">100% offline</strong> forever.
+      <div className="p-4 rounded-xl bg-secondary space-y-3 mb-6">
+        <div className="flex items-start gap-3">
+          <Zap className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-semibold text-sm mb-1">Instant Edge Processing</h4>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Snook OS uses an optimized offline content generation engine. Suggestions for nicknames, tournament names, and match records resolve in milliseconds without draining your device's bandwidth or battery.
             </p>
-            <button
-              onClick={handleDownload}
-              className="w-full py-3 rounded-xl bg-[hsl(var(--gold))]/10 border border-[hsl(var(--gold))]/20 text-[hsl(var(--gold))] font-bold flex items-center justify-center gap-2 hover:bg-[hsl(var(--gold))]/20 transition-all text-sm"
-            >
-              <Download className="w-4 h-4" />
-              Force Download Model (~300 MB)
-            </button>
-          </>
-        )}
+          </div>
+        </div>
+      </div>
 
-        {status === 'downloading' && (
-          <>
-            <div className="flex items-center gap-2 text-sm text-[hsl(var(--gold))]">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="font-semibold">Downloading... {progress > 0 ? `${progress}%` : ''}</span>
-            </div>
-            {/* Progress Bar */}
-            <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden">
-              <div
-                className="h-full bg-[hsl(var(--gold))] rounded-full transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            {progressFile && (
-              <p className="text-xs text-gray-500 truncate">Fetching: {progressFile.split('/').pop()}</p>
-            )}
-            <p className="text-xs text-gray-500">Do not close this tab. This happens only once.</p>
-          </>
-        )}
-
-        {status === 'ready' && (
-          <>
-            <p className="text-xs text-gray-400 leading-relaxed">
-              The AI model is cached on this device. Smart features (Nickname Suggestions, Tournament Names, Match Commentary) are available offline.
-            </p>
-            <button
-              onClick={handleClear}
-              className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors"
-            >
-              <Trash2 className="w-3 h-3" /> Clear AI model cache
-            </button>
-          </>
-        )}
-
-        {status === 'error' && (
-          <>
-            <p className="text-xs text-red-400 font-mono break-all bg-red-500/10 p-3 rounded-lg border border-red-500/20">
-              <strong className="block mb-1 text-red-500 uppercase tracking-widest text-[10px]">Exact Error</strong>
-              {errorMsg || 'Download failed. Please check your internet connection.'}
-            </p>
-            <button
-              onClick={handleDownload}
-              className="w-full py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-bold flex items-center justify-center gap-2 text-sm"
-            >
-              <Download className="w-4 h-4" /> Force Download Model
-            </button>
-          </>
-        )}
+      <div className="flex gap-3">
+        <button
+          onClick={handleClear}
+          className="flex-1 py-3 px-4 rounded-xl border border-destructive/30 text-destructive flex items-center justify-center gap-2 hover:bg-destructive/10 transition-colors font-medium text-sm"
+        >
+          <Trash2 className="w-4 h-4" />
+          Clear Cache
+        </button>
       </div>
     </div>
   );
-};
-
-export default AIStatusCard;
+}

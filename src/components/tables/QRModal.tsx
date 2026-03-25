@@ -38,9 +38,22 @@ const QRModal = ({ table, onClose }: QRModalProps) => {
   const handleCopy = async () => {
     if (!qrValue) return;
     try {
-      await navigator.clipboard.writeText(qrValue);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(qrValue);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = qrValue;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
       setCopied(true);
-      toast.success('Link copied to clipboard');
+      toast.success('Public link copied!');
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       toast.error('Failed to copy link');

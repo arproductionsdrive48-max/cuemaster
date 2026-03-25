@@ -12,8 +12,8 @@ env.useBrowserCache = typeof caches !== 'undefined';
 
 // Point ONNX Runtime Web to a reliable CDN so Vite's dev server never needs
 // to serve the .wasm binaries (avoids 404s from the Vite rewrite layer).
-// @ts-ignore – property exists at runtime
-env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+// We let Transformers.js use its default CDN for the exact version it needs.
+// env.backends.onnx.wasm.wasmPaths = ...
 
 // ── Pipeline Singleton ─────────────────────────────────────────────────────
 // Keeps the model in memory after the first load so subsequent calls are fast.
@@ -43,7 +43,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
       self.postMessage({ id, status: 'init', progress: { status: 'init', progress: 0 } });
       const generator = await getGenerator((progress: any) => {
         console.log('[mlWorker] Download progress:', progress?.status, progress?.progress);
-        self.postMessage({ id, status: 'init', progress });
+        self.postMessage({ id, status: 'progress', progress });
       });
       self.postMessage({ id, status: 'complete', result: 'Model downloaded successfully.' });
     } catch (err: any) {
@@ -60,8 +60,10 @@ self.addEventListener('message', async (event: MessageEvent) => {
     self.postMessage({ id, status: 'init', progress: { status: 'init', progress: 0 } });
 
     const generator = await getGenerator((progress: any) => {
-      self.postMessage({ id, status: 'init', progress });
+      self.postMessage({ id, status: 'progress', progress });
     });
+
+    self.postMessage({ id, status: 'generating' });
 
     // Build the Qwen chat-style prompt
     const promptText =
@@ -71,19 +73,17 @@ self.addEventListener('message', async (event: MessageEvent) => {
 
     const output = await generator(promptText, {
       max_new_tokens:   maxNewTokens,
-      temperature:       0.8,
+      temperature:       0.2, // Low temperature for factual text
       do_sample:         true,
-      repetition_penalty: 1.1,
+      repetition_penalty: 1.15,
+      return_full_text:  false,
     });
 
     let generatedText: string = output[0]?.generated_text ?? '';
 
     // Strip the prompt header so only the assistant reply remains
-    const assistantMarker = '<|im_start|>assistant\n';
-    const markerIdx = generatedText.lastIndexOf(assistantMarker);
-    if (markerIdx !== -1) {
-      generatedText = generatedText.slice(markerIdx + assistantMarker.length).trim();
-    }
+    const cleanOutput = generatedText.split('assistant\n').pop() || generatedText;
+    generatedText = cleanOutput.trim();
 
     // Also strip any trailing <|im_end|> tokens
     generatedText = generatedText.replace(/<\|im_end\|>.*/s, '').trim();

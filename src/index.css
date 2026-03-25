@@ -333,6 +333,24 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Alias for sidebar */
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* GPU-accelerated transitions — reduces jank on Xiaomi / low-end Android */
+  .gpu {
+    will-change: transform;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  /* Tab-bar safe area bottom padding */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 /* Animations */

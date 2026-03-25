@@ -18,18 +18,19 @@ const MatchDetailModal = ({ match, onClose }: MatchDetailModalProps) => {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedText, setGeneratedText] = useState('');
-  const [mlLoadingMsg, setMlLoadingMsg] = useState('');
+  const [mlLoadingMsg, setMlLoadingMsg] = useState('Processing smart highlights...');
 
   const handleGenerateHighlights = async () => {
     setIsGenerating(true);
     setGeneratedText('');
+    setMlLoadingMsg('Processing smart highlights...');
     
     const unsubscribe = mlService.onProgress((info) => {
-      if (info.status === 'init' || info.status === 'downloading') {
+      if (info.status === 'init' || info.status === 'downloading' || info.status === 'progress') {
         const percent = info.progress ? Math.round(info.progress) : 0;
-        setMlLoadingMsg(`Downloading AI assistant (~300 MB, one-time)... ${percent > 0 ? percent + '%' : ''}`);
-      } else if (info.status === 'done') {
-        setMlLoadingMsg('Generator ready!');
+        setMlLoadingMsg(percent > 0 ? `Loading AI model from cache... ${percent}%` : 'Loading AI model...');
+      } else if (info.status === 'generating') {
+        setMlLoadingMsg('Generating highlights. This may take a moment on your device...');
       }
     });
 
@@ -88,7 +89,49 @@ Rules:
   };
 
   const handlePrint = () => {
-    window.print();
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Receipt - Table ${match.tableNumber}</title>
+          <style>
+            body { 
+              font-family: monospace; 
+              padding: 40px 20px;
+              color: #000;
+              background: #fff;
+              max-width: 350px;
+              margin: 0 auto;
+            }
+            pre {
+              white-space: pre-wrap;
+              word-wrap: break-word;
+              font-size: 13px;
+              line-height: 1.5;
+            }
+            .logo {
+              width: 60px;
+              height: 60px;
+              margin: 0 auto 20px auto;
+              display: block;
+            }
+          </style>
+        </head>
+        <body>
+          <img src="/logo.png" class="logo" onerror="this.style.display='none'" />
+          <pre>${receiptContent}</pre>
+          <script>
+            window.onload = () => {
+              window.print();
+              window.onafterprint = () => window.close();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const receiptContent = generateReceiptText(

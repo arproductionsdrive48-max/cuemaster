@@ -418,23 +418,23 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
               <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2">
                 {table.billingMode === 'per_minute' ? 'Session Time (Per Minute)' : 'Session Time'}
               </p>
-              <div className="flex items-center justify-center gap-1">
+              <div className="flex items-center justify-center gap-1 gpu">
                 <span className={cn(
-                  "text-5xl font-bold font-mono tracking-tight",
+                  "text-5xl font-bold font-mono tracking-tight select-none",
                   table.status === 'occupied' ? "text-foreground" : table.status === 'paused' ? "text-amber-400" : "text-muted-foreground"
                 )}>
                   {hours}
                 </span>
-                <span className="text-5xl font-bold text-primary animate-pulse">:</span>
+                <span className="text-5xl font-bold text-primary animate-pulse select-none">:</span>
                 <span className={cn(
-                  "text-5xl font-bold font-mono tracking-tight",
+                  "text-5xl font-bold font-mono tracking-tight select-none",
                   table.status === 'occupied' ? "text-foreground" : table.status === 'paused' ? "text-amber-400" : "text-muted-foreground"
                 )}>
                   {minutes}
                 </span>
-                <span className="text-5xl font-bold text-primary animate-pulse">:</span>
+                <span className="text-5xl font-bold text-primary animate-pulse select-none">:</span>
                 <span className={cn(
-                  "text-5xl font-bold font-mono tracking-tight",
+                  "text-5xl font-bold font-mono tracking-tight select-none",
                   table.status === 'occupied' ? "text-primary" : table.status === 'paused' ? "text-amber-400" : "text-muted-foreground"
                 )}>
                   {seconds}
