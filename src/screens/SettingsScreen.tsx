@@ -4,6 +4,7 @@ import { triggerInstall } from '@/components/pwa/InstallPrompt';
 import CameraSetupModal from '@/components/settings/CameraSetupModal';
 import InventoryModal from '@/components/settings/InventoryModal';
 import ManageTablesModal from '@/components/settings/ManageTablesModal';
+import NotificationsConfig from '@/components/settings/NotificationsConfig';
 import PrivacyScreen from '@/screens/PrivacyScreen';
 import HelpScreen from '@/screens/HelpScreen';
 import AIStatusCard from '@/components/settings/AIStatusCard';
@@ -51,6 +52,7 @@ const SettingsScreen = () => {
     clubSettings, updateClubSettings,
     tables: dbTables,
     syncTablesWithPricing,
+    clubId,
   } = useMembers();
 
   // Derive IndividualTablePricing[] from live Supabase tables — use actual DB values
@@ -218,6 +220,17 @@ const SettingsScreen = () => {
             <span>🤖</span> Smart AI Features
           </h3>
           <AIStatusCard />
+        </div>
+
+        {/* Notification Setup */}
+        <div>
+          <h3 className="text-sm font-semibold text-violet-400 uppercase tracking-wide mb-1 flex items-center gap-2">
+            <Bell className="w-4 h-4" /> Notification Setup
+          </h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            Connect SMS, Email, and Push notifications so your customers get booking reminders and confirmations automatically.
+          </p>
+          <NotificationsConfig clubId={clubId} />
         </div>
 
         {/* Club Status */}

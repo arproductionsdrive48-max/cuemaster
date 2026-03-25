@@ -363,7 +363,7 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
       </div>
 
       {/* Scrollable Content */}
-      <div className="overflow-y-auto h-[calc(100vh-180px)] no-scrollbar px-4 pt-4 pb-32">
+      <div className="overflow-y-auto h-[calc(100vh-180px)] no-scrollbar px-4 pt-4 pb-52">
         {/* Timer Section - TOP & Prominent */}
         <div 
           className="rounded-2xl p-5 mb-5"
@@ -495,7 +495,8 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
           </div>
         </div>
 
-        {/* Players Section */}
+        {/* Players Section — only during active sessions */}
+        {table.status !== 'free' && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Players ({table.players.length})</h3>
@@ -597,8 +598,10 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
             </div>
           )}
         </div>
+        )}
 
-        {/* Quick POS Section */}
+        {/* Quick POS Section — only during active sessions */}
+        {table.status !== 'free' && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Quick POS</h3>
@@ -684,11 +687,13 @@ const TableDetailModal = ({ table, onClose, onUpdate, onEndSession }: TableDetai
             })}
           </div>
         </div>
+        )}
+
       </div>
 
       {/* Sticky Footer with Bill & Pay Button */}
       <div 
-        className="fixed bottom-0 left-0 right-0 px-4 pt-3 pb-6"
+        className="fixed bottom-0 left-0 right-0 px-4 pt-3 pb-20"
         style={{
           background: 'rgba(15, 15, 12, 0.95)',
           backdropFilter: 'blur(20px)',
