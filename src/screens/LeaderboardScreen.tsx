@@ -5,7 +5,7 @@ import Header from '@/components/layout/Header';
 import PlayerDetailModal from '@/components/leaderboard/PlayerDetailModal';
 import { Trophy, Medal, Target, TrendingUp, Calendar, ChevronRight, Star, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { subDays, isAfter, format } from 'date-fns';
+import { subDays, isAfter, format, startOfDay } from 'date-fns';
 
 type SortType = 'points' | 'wins' | 'games';
 type TimeFilter = 'all' | 'weekly' | 'monthly';
@@ -15,6 +15,7 @@ interface LeaderboardScreenProps {
 }
 
 const calculatePoints = (m: Member) => m.cpp_points || 0;
+const normalizeName = (name: string) => (name || '').trim().toLowerCase();
 
 const LeaderboardScreen = ({ onBack }: LeaderboardScreenProps) => {
   const { members, matchHistory, tournaments } = useMembers();
@@ -25,45 +26,65 @@ const LeaderboardScreen = ({ onBack }: LeaderboardScreenProps) => {
 
   const rankedMembers = useMemo(() => {
     const now = new Date();
-    const filterDate = timeFilter === 'weekly' ? subDays(now, 7) : timeFilter === 'monthly' ? subDays(now, 30) : null;
+    const filterDate = timeFilter === 'weekly' 
+      ? startOfDay(subDays(now, 7)) 
+      : timeFilter === 'monthly' 
+        ? startOfDay(subDays(now, 30)) 
+        : null;
 
     return [...members]
       .map(m => {
+        const mName = normalizeName(m.name);
+        
         if (filterDate) {
           // Calculate from match history within time period
           const playerMatches = matchHistory.filter(mh => 
-            isAfter(mh.date, filterDate) &&
-            mh.players.some(p => p.name === m.name)
+            isAfter(new Date(mh.date), filterDate) &&
+            mh.players.some(p => normalizeName(p.name) === mName)
           );
+
+          let tWins = 0;
+          let tLosses = 0;
+
           // Calculate from tournament brackets within time period
           const tournamentPoints = tournaments.reduce((acc, t) => {
             if (!t.bracket || !t.date || !isAfter(new Date(t.date), filterDate)) return acc;
-            const playerBracketMatches = t.bracket.matches.filter(match => 
+            const playerBracketMatches = t.bracket.matches.filter((match: any) => 
               match.status === 'completed' && 
-              (match.player1 === m.name || match.player2 === m.name)
+              (normalizeName(match.player1 || '') === mName || normalizeName(match.player2 || '') === mName)
             );
-            return acc + playerBracketMatches.reduce((pAcc, match) => {
+            return acc + playerBracketMatches.reduce((pAcc: number, match: any) => {
               let matchPoints = 0;
-              if (match.winner === m.name) matchPoints += 21;
-              else if (match.player1 !== 'Bye' && match.player2 !== 'Bye' && match.status === 'completed') matchPoints += 1;
+              const isWinner = normalizeName(match.winner || '') === mName;
               
-              if (match.highestBreakPlayer === m.name) matchPoints += 5;
+              if (isWinner) {
+                matchPoints += 21;
+                tWins++;
+              } else if (match.player1 !== 'Bye' && match.player2 !== 'Bye' && match.status === 'completed') {
+                matchPoints += 1;
+                tLosses++;
+              }
+              
+              if (normalizeName(match.highestBreakPlayer || '') === mName) matchPoints += 5;
               return pAcc + matchPoints;
             }, 0);
           }, 0);
 
-          const wins = playerMatches.filter(mh => 
-            mh.players.find(p => p.name === m.name)?.result === 'win'
+          const mhWins = playerMatches.filter(mh => 
+            mh.players.find(p => normalizeName(p.name) === mName)?.result === 'win'
           ).length;
-          const losses = playerMatches.filter(mh => 
-            mh.players.find(p => p.name === m.name)?.result === 'loss'
+          const mhLosses = playerMatches.filter(mh => 
+            mh.players.find(p => normalizeName(p.name) === mName)?.result === 'loss'
           ).length;
+          
+          const wins = mhWins + tWins;
+          const losses = mhLosses + tLosses;
           const games = wins + losses;
           
           const matchHistoryPoints = playerMatches.reduce((acc, mh) => {
-            const playerInfo = mh.players.find(p => p.name === m.name);
+            const playerInfo = mh.players.find(p => normalizeName(p.name) === mName);
             let pPoints = playerInfo?.result === 'win' ? 4 : 1;
-            if (mh.highestBreakPlayer === m.name) pPoints += 5;
+            if (normalizeName(mh.highestBreakPlayer || '') === mName) pPoints += 5;
             return acc + pPoints;
           }, 0);
 
@@ -87,7 +108,7 @@ const LeaderboardScreen = ({ onBack }: LeaderboardScreenProps) => {
         if (sortBy === 'wins') return (b.wins || 0) - (a.wins || 0);
         return (b.gamesPlayed || 0) - (a.gamesPlayed || 0);
       });
-  }, [sortBy, members, matchHistory, timeFilter]);
+  }, [sortBy, members, matchHistory, tournaments, timeFilter]);
 
   const handlePlayerClick = (member: Member & { winRate: number; points: number }, rank: number) => {
     setSelectedPlayer(member);
