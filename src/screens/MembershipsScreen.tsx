@@ -15,7 +15,7 @@ const MembershipsScreen = () => {
   
   // Modal states
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-  const [activeModal, setActiveModal] = useState<'tier' | 'points' | 'credit' | null>(null);
+  const [activeModal, setActiveModal] = useState<'type' | 'points' | 'credit' | null>(null);
   
   // Input states
   const [pointsInput, setPointsInput] = useState('');
@@ -40,17 +40,18 @@ const MembershipsScreen = () => {
     { label: 'CPP Awarded', value: totalPoints.toLocaleString(), icon: Award, color: 'text-purple-400' },
   ];
 
-  const getTierColors = (tier: string) => {
-    switch(tier.toLowerCase()) {
+  const getTierColors = (type: string) => {
+    switch(type?.toLowerCase()) {
       case 'gold': return 'bg-[hsl(var(--gold))]/10 text-[hsl(var(--gold))] border-[hsl(var(--gold))]/20';
       case 'silver': return 'bg-slate-300/10 text-slate-300 border-slate-300/20';
+      case 'bronze': return 'bg-amber-700/10 text-amber-500 border-amber-700/20';
       default: return 'bg-white/5 text-gray-400 border-white/10';
     }
   };
 
   const handleAction = (member: Member) => {
     setSelectedMember(member);
-    setActiveModal('tier'); // Open action sheet/modal defaulted to tier
+    setActiveModal('type'); // Open action sheet/modal defaulted to type
   };
 
   const executeUpdate = (updates: Partial<Member>) => {
@@ -123,10 +124,10 @@ const MembershipsScreen = () => {
                     <p className="text-xs text-gray-400">{member.phone || 'No phone'}</p>
                   </div>
                 </div>
-                <div className={cn("px-3 py-1 rounded-full border text-xs font-bold uppercase tracking-wider flex items-center gap-1.5", getTierColors(member.tier))}>
-                  {member.tier === 'Gold' && <Crown className="w-3.5 h-3.5" />}
-                  {member.tier === 'Silver' && <Shield className="w-3.5 h-3.5" />}
-                  {member.tier}
+                <div className={cn("px-3 py-1 rounded-full border text-xs font-bold uppercase tracking-wider flex items-center gap-1.5", getTierColors(member.membershipType))}>
+                  {member.membershipType === 'Gold' && <Crown className="w-3.5 h-3.5" />}
+                  {member.membershipType === 'Silver' && <Shield className="w-3.5 h-3.5" />}
+                  {member.membershipType}
                 </div>
               </div>
 
@@ -181,10 +182,10 @@ const MembershipsScreen = () => {
 
             <div className="p-2 bg-secondary/30 flex p-2 border-b border-white/5">
               <button 
-                onClick={() => setActiveModal('tier')} 
-                className={cn("flex-1 text-sm font-bold py-2 rounded-xl transition-all", activeModal === 'tier' ? "bg-white/10 text-white" : "text-gray-400")}
+                onClick={() => setActiveModal('type')} 
+                className={cn("flex-1 text-sm font-bold py-2 rounded-xl transition-all", activeModal === 'type' ? "bg-white/10 text-white" : "text-gray-400")}
               >
-                Tier
+                Type
               </button>
               <button 
                 onClick={() => setActiveModal('points')} 
@@ -201,16 +202,16 @@ const MembershipsScreen = () => {
             </div>
 
             <div className="p-6">
-              {activeModal === 'tier' && (
+              {activeModal === 'type' && (
                 <div className="space-y-3">
-                  {['Gold', 'Silver', 'Regular'].map(t => (
+                  {['Gold', 'Silver', 'Bronze', 'Regular', 'Guest'].map(t => (
                     <button 
                       key={t}
-                      onClick={() => executeUpdate({ tier: t as any })}
-                      className={cn("w-full py-4 rounded-xl border flex items-center justify-between px-4 transition-all", selectedMember.tier === t ? getTierColors(t) : "border-white/5 text-gray-400 hover:bg-white/5")}
+                      onClick={() => executeUpdate({ membershipType: t as any })}
+                      className={cn("w-full py-4 rounded-xl border flex items-center justify-between px-4 transition-all", selectedMember.membershipType === t ? getTierColors(t) : "border-white/5 text-gray-400 hover:bg-white/5")}
                     >
-                      <span className="font-bold">{t} Tier</span>
-                      {selectedMember.tier === t && <div className="w-2 h-2 rounded-full bg-current" />}
+                      <span className="font-bold">{t} Membership</span>
+                      {selectedMember.membershipType === t && <div className="w-2 h-2 rounded-full bg-current" />}
                     </button>
                   ))}
                 </div>

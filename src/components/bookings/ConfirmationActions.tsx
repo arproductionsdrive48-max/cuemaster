@@ -5,13 +5,14 @@ import { CheckCircle, MessageCircle, XCircle, StickyNote } from 'lucide-react';
 interface ConfirmationActionsProps {
   booking: Booking;
   onConfirm: (id: string) => void;
+  onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onRemind: (booking: Booking) => void;
   onAddNote: (id: string, note: string | null) => void;
   isOnline: boolean;
 }
 
-const ConfirmationActions: React.FC<ConfirmationActionsProps> = ({ booking, onConfirm, onCancel, onRemind, onAddNote, isOnline }) => {
+const ConfirmationActions: React.FC<ConfirmationActionsProps> = ({ booking, onConfirm, onComplete, onCancel, onRemind, onAddNote, isOnline }) => {
   return (
     <div className="flex flex-row md:flex-col items-stretch border-t md:border-t-0 md:border-l border-white/5 bg-black/20 w-full md:w-32 shrink-0 p-2 gap-2">
       {booking.status === 'pending' || booking.status === 'waitlisted' ? (
@@ -22,6 +23,17 @@ const ConfirmationActions: React.FC<ConfirmationActionsProps> = ({ booking, onCo
         >
           <CheckCircle className="w-4 h-4" />
           <span>Confirm</span>
+        </button>
+      ) : null}
+
+      {booking.status === 'confirmed' ? (
+        <button 
+          onClick={() => onComplete(booking.id)}
+          disabled={!isOnline}
+          className="flex-1 flex md:flex-col items-center justify-center gap-1.5 p-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 text-xs font-bold transition-colors disabled:opacity-50"
+        >
+          <CheckCircle className="w-4 h-4" />
+          <span>Complete</span>
         </button>
       ) : null}
 

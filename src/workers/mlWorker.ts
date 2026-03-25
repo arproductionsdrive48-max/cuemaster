@@ -6,7 +6,9 @@ import { pipeline, env } from '@huggingface/transformers';
 // ── Environment Configuration ──────────────────────────────────────────────
 // Disable local model loading (we always fetch from HF Hub → cached in IndexedDB).
 env.allowLocalModels = false;
-env.useBrowserCache   = true;
+// caches API is only available in Secure Contexts (localhost or HTTPS).
+// If accessing via local network IP (e.g. 192.168.x.x), it will be disabled.
+env.useBrowserCache = typeof caches !== 'undefined';
 
 // Point ONNX Runtime Web to a reliable CDN so Vite's dev server never needs
 // to serve the .wasm binaries (avoids 404s from the Vite rewrite layer).
@@ -33,6 +35,23 @@ async function getGenerator(progressCallback: (info: any) => void) {
 // ── Message Handler ────────────────────────────────────────────────────────
 self.addEventListener('message', async (event: MessageEvent) => {
   const { id, type, systemPrompt, userMessage, maxNewTokens = 80 } = event.data;
+
+  if (type === 'force_download') {
+    try {
+      console.log('[mlWorker] Force download requested...');
+      // Start init progress
+      self.postMessage({ id, status: 'init', progress: { status: 'init', progress: 0 } });
+      const generator = await getGenerator((progress: any) => {
+        console.log('[mlWorker] Download progress:', progress?.status, progress?.progress);
+        self.postMessage({ id, status: 'init', progress });
+      });
+      self.postMessage({ id, status: 'complete', result: 'Model downloaded successfully.' });
+    } catch (err: any) {
+      console.error('[mlWorker] Force download failed with exact error:', err);
+      self.postMessage({ id, status: 'error', error: err?.message || String(err) });
+    }
+    return;
+  }
 
   if (type !== 'generate') return;
 

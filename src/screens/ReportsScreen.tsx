@@ -122,7 +122,7 @@ const ReportsScreen = () => {
     const { matches: fMatches, bookings: fBookings, tournaments: fTournaments } = filteredData;
     const { start, end } = filterRange;
 
-    let csvContent = `CUE MASTER REPORT\n`;
+    let csvContent = `\uFEFFCUE MASTER REPORT\n`;
     csvContent += `Period: ${format(start, 'yyyy-MM-dd')} to ${format(end, 'yyyy-MM-dd')}\n`;
     csvContent += `Generated at: ${format(new Date(), 'yyyy-MM-dd HH:mm')}\n\n`;
 
@@ -135,9 +135,16 @@ const ReportsScreen = () => {
 
     if (fMatches.length > 0) {
       csvContent += `MATCH DETAILS\n`;
-      csvContent += `Date,Table,Duration (min),Total Bill,Split Count\n`;
+      csvContent += `Date,Start Time,End Time,Table,Duration (min),Total Bill,Split Count\n`;
       fMatches.forEach(m => {
-        csvContent += `${format(new Date(m.date), 'yyyy-MM-dd HH:mm')},${m.tableNumber},${Math.round(m.duration/60000)},${m.totalBill},${m.splitCount || 1}\n`;
+        const endDate = m.sessionEndTime ? new Date(m.sessionEndTime) : new Date(m.date);
+        const startDate = m.sessionStartTime ? new Date(m.sessionStartTime) : new Date(endDate.getTime() - m.duration);
+        
+        const dateStr = format(startDate, 'yyyy-MM-dd');
+        const startTimeStr = format(startDate, 'hh:mm a');
+        const endTimeStr = format(endDate, 'hh:mm a');
+        
+        csvContent += `${dateStr},${startTimeStr},${endTimeStr},${m.tableNumber},${Math.round(m.duration/60000)},${m.totalBill},${m.splitCount || 1}\n`;
       });
       csvContent += `\n`;
     }
@@ -153,9 +160,23 @@ const ReportsScreen = () => {
 
     if (fTournaments.length > 0) {
       csvContent += `TOURNAMENT DETAILS\n`;
-      csvContent += `Name,Date,Type,Entry Fee,Winner\n`;
+      csvContent += `Name,Date,Type,Entry Fee,Winner,Prizes\n`;
       fTournaments.forEach(t => {
-        csvContent += `"${t.name}",${format(new Date(t.date), 'yyyy-MM-dd')},${t.type},${t.entryFee},${t.winner || 'TBD'}\n`;
+        let prizesStr = 'None';
+        if (t.prizeDistribution && t.prizeDistribution.length > 0) {
+          prizesStr = t.prizeDistribution.map(p => {
+            const j = p.place % 10, k = p.place % 100;
+            let suf = "th";
+            if (j == 1 && k != 11) suf = "st";
+            if (j == 2 && k != 12) suf = "nd";
+            if (j == 3 && k != 13) suf = "rd";
+            return `${p.place}${suf}: ₹${p.amount}`;
+          }).join(' | ');
+        } else if (t.prizePool) {
+          prizesStr = `Total Pool: ₹${t.prizePool}`;
+        }
+        
+        csvContent += `"${t.name}",${format(new Date(t.date), 'yyyy-MM-dd')},${t.type},${t.entryFee},"${t.winner || 'TBD'}","${prizesStr}"\n`;
       });
       csvContent += `\n`;
     }

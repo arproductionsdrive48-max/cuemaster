@@ -207,6 +207,16 @@ const TableCard = ({ table, onClick, disabled, onAction, onQRClick }: TableCardP
                   <LiveBillDisplay table={table} />
                 </div>
               </div>
+
+              {/* Temporary Debug Banner for Billing */}
+              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-xs font-mono break-all leading-tight">
+                <strong className="block text-red-500 mb-1 uppercase tracking-widest text-[10px]">⚠️ Billing Debug Info</strong>
+                Calc Base: {table.billingMode === 'per_frame' ? table.frameCount + ' frames' : Math.floor(Math.max(0, Date.now() - (table.startTime?.getTime() || Date.now()) - (table.pausedTime || 0))/60000) + ' min elapsed'}
+                <br/>
+                Items Total: ₹{table.items?.reduce((s,i)=>s+i.price*i.quantity,0) || 0}
+                <br/>
+                Sync DB Prop (totalBill): ₹{table.totalBill}
+              </div>
             </div>
           )}
         </div>

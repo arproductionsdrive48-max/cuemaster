@@ -562,6 +562,43 @@ const SettingsScreen = () => {
           </div>
         </div>
 
+        {/* Booking Settings Toggle */}
+        <div>
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Booking Settings</h3>
+          <div className="glass-card overflow-hidden">
+            <button
+              onClick={() => updateClubSettings({ autoStartBookings: !clubSettings.autoStartBookings })}
+              className="w-full p-4 flex items-center gap-4 hover:bg-accent/30 transition-colors">
+
+              <div className={cn(
+                "w-10 h-10 rounded-xl flex items-center justify-center",
+                clubSettings.autoStartBookings ? "bg-[hsl(var(--gold))]/20" : "bg-secondary"
+              )}>
+                {clubSettings.autoStartBookings ?
+                <ToggleRight className="w-5 h-5 text-[hsl(var(--gold))]" /> :
+
+                <ToggleLeft className="w-5 h-5 text-muted-foreground" />
+                }
+              </div>
+              <div className="flex-1 text-left">
+                <p className="font-semibold">Auto-Start Bookings</p>
+                <p className="text-sm text-muted-foreground">
+                  {clubSettings.autoStartBookings ? 'Confirmed bookings instantly start the table at scheduled time' : 'Bookings require manual start'}
+                </p>
+              </div>
+              <div className={cn(
+                'w-12 h-7 rounded-full p-1 transition-colors',
+                clubSettings.autoStartBookings ? 'bg-[hsl(var(--gold))]' : 'bg-secondary'
+              )}>
+                <div className={cn(
+                  'w-5 h-5 rounded-full bg-foreground transition-transform',
+                  clubSettings.autoStartBookings && 'translate-x-5'
+                )} />
+              </div>
+            </button>
+          </div>
+        </div>
+
         {/* Table Rates & Pricing */}
         <div>
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Table Rates & Pricing</h3>

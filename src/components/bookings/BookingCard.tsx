@@ -9,6 +9,7 @@ interface BookingCardProps {
   booking: Booking;
   tablePricing: TablePricing;
   onConfirm: (id: string) => void;
+  onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onRemind: (booking: Booking) => void;
   onAddNote: (id: string, note: string | null) => void;
@@ -17,13 +18,24 @@ interface BookingCardProps {
 
 const statusConfig = {
   confirmed: { color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', label: 'Confirmed' },
+  completed: { color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', label: 'Completed' },
   pending: { color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', label: 'Pending' },
   cancelled: { color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', label: 'Cancelled' },
   waitlisted: { color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', label: 'Waitlist' }
 };
 
-const BookingCard: React.FC<BookingCardProps> = ({ booking, tablePricing, onConfirm, onCancel, onRemind, onAddNote, isOnline }) => {
-  const config = statusConfig[booking.status];
+function formatTime12h(timeStr: string) {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':');
+  let hours = parseInt(h, 10);
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12; // the hour '0' should be '12'
+  return `${hours.toString().padStart(2, '0')}:${m} ${ampm}`;
+}
+
+const BookingCard: React.FC<BookingCardProps> = ({ booking, tablePricing, onConfirm, onComplete, onCancel, onRemind, onAddNote, isOnline }) => {
+  const config = statusConfig[booking.status] || { color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20', label: booking.status };
 
   // Helper to calculate approx cost if hourly
   let estCostDisplay = null;
@@ -44,6 +56,7 @@ const BookingCard: React.FC<BookingCardProps> = ({ booking, tablePricing, onConf
       {/* Left indicator strip - Desktop only */}
       <div className={cn("hidden md:block w-1.5", 
         booking.status === 'confirmed' ? "bg-emerald-500" :
+        booking.status === 'completed' ? "bg-blue-500" :
         booking.status === 'waitlisted' ? "bg-orange-500" :
         booking.status === 'cancelled' ? "bg-red-500" : "bg-amber-500"
       )} />
@@ -68,13 +81,13 @@ const BookingCard: React.FC<BookingCardProps> = ({ booking, tablePricing, onConf
                 )}
                 <Calendar className="w-3.5 h-3.5" /> {format(booking.date, 'MMM d')}
                 <span className="mx-1">•</span>
-                <Clock className="w-3.5 h-3.5" /> {booking.startTime} - {booking.endTime}
+                <Clock className="w-3.5 h-3.5" /> {formatTime12h(booking.startTime)} - {formatTime12h(booking.endTime)}
               </div>
             </div>
           </div>
 
           <div className={cn("px-3 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0", config.bg, config.color)}>
-             {booking.status === 'confirmed' && <CheckCircle className="w-3.5 h-3.5" />}
+             {(booking.status === 'confirmed' || booking.status === 'completed') && <CheckCircle className="w-3.5 h-3.5" />}
              {booking.status === 'cancelled' && <XCircle className="w-3.5 h-3.5" />}
              {config.label}
           </div>
@@ -120,6 +133,7 @@ const BookingCard: React.FC<BookingCardProps> = ({ booking, tablePricing, onConf
       <ConfirmationActions 
         booking={booking}
         onConfirm={onConfirm}
+        onComplete={onComplete}
         onCancel={onCancel}
         onRemind={onRemind}
         onAddNote={onAddNote}

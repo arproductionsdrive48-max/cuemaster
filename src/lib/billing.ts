@@ -29,24 +29,39 @@ export const calculateLiveBill = (
     0
   );
 
-  if (table.billingMode === 'per_frame') {
-    return table.frameCount * pricing.perFrame + itemsTotal;
-  }
-
+  let finalBill = 0;
+  let totalMinutes = 0;
   const start = table.startTime.getTime();
   const pausedMs = table.pausedTime || 0;
-  const elapsed = table.status === 'paused'
-    ? Math.max(0, now - start - pausedMs)  // frozen at pause point
-    : Math.max(0, now - start - pausedMs);
-  const totalMinutes = elapsed / 60000;
 
-  if (table.billingMode === 'per_minute') {
-    return Math.floor(totalMinutes) * pricing.perMinute + itemsTotal;
+  if (table.billingMode === 'per_frame') {
+    finalBill = table.frameCount * pricing.perFrame + itemsTotal;
+  } else {
+    const elapsed = table.status === 'paused'
+      ? Math.max(0, now - start - pausedMs)  // frozen at pause point
+      : Math.max(0, now - start - pausedMs);
+    totalMinutes = elapsed / 60000;
+
+    if (table.billingMode === 'per_minute') {
+      finalBill = Math.floor(totalMinutes) * pricing.perMinute + itemsTotal;
+    } else {
+      const hours = totalMinutes / 60;
+      finalBill = Math.round(hours * pricing.perHour) + itemsTotal;
+    }
   }
 
-  // hourly
-  const hours = totalMinutes / 60;
-  return Math.round(hours * pricing.perHour) + itemsTotal;
+  // --- DEBUG LOGGING ---
+  console.log(`[Billing Debug] Table ${table.tableNumber} | Mode: ${table.billingMode}`);
+  console.log(`  - Start Time: ${table.startTime?.toISOString()}`);
+  console.log(`  - End Time (Now): ${new Date(now).toISOString()}`);
+  console.log(`  - Elapsed: ${totalMinutes.toFixed(2)} mins`);
+  console.log(`  - Paused Time: ${(pausedMs / 60000).toFixed(2)} mins`);
+  console.log(`  - Items array:`, table.items);
+  console.log(`  - Items Total: ₹${itemsTotal}`);
+  console.log(`  - Rate: ${table.billingMode === 'per_frame' ? pricing.perFrame + ' per frame' : table.billingMode === 'per_minute' ? pricing.perMinute + ' per min' : pricing.perHour + ' per hour'}`);
+  console.log(`  ----- Final Calculated Total: ₹${finalBill} -----`);
+
+  return finalBill;
 };
 
 export const generateReceiptText = (

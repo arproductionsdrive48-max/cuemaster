@@ -83,6 +83,7 @@ class MLService {
   private pendingCallbacks: Map<string, (res: { status: string; result?: string; error?: string }) => void> = new Map();
   private progressListeners: Set<(info: ProgressInfo) => void> = new Set();
   public isWorkerAvailable = false;
+  private workerErrorMsg: string = '';
 
   constructor() {
     this.initWorker();
@@ -90,20 +91,22 @@ class MLService {
 
   private initWorker() {
     if (typeof window === 'undefined' || !window.Worker) {
-      console.warn('[mlService] Web Workers are not supported in this environment.');
+      this.workerErrorMsg = 'window.Worker not found in environment.';
+      console.warn('[mlService]', this.workerErrorMsg);
       return;
     }
 
     try {
       this.worker = new Worker(new URL('../workers/mlWorker.ts', import.meta.url), { type: 'module' });
       this.isWorkerAvailable = true;
+      this.workerErrorMsg = '';
 
       this.worker.addEventListener('message', (e: MessageEvent) => {
         const { id, status, result, error, progress } = e.data;
 
-        if (status === 'init') {
+        if (status === 'init' || status === 'downloading' || status === 'progress') {
           // Broadcast progress to all listeners
-          this.progressListeners.forEach(cb => cb(progress as ProgressInfo));
+          this.progressListeners.forEach(cb => cb(progress || e.data));
           return;
         }
 
@@ -115,17 +118,19 @@ class MLService {
       });
 
       this.worker.addEventListener('error', (e: ErrorEvent) => {
-        console.error('[mlService] Unhandled worker error:', e.message);
+        console.error('[mlService] Unhandled worker script error:', e.message);
         this.isWorkerAvailable = false;
+        this.workerErrorMsg = e.message || 'Worker script crashed.';
         // Reject all pending
-        this.pendingCallbacks.forEach((resolve, id) => {
-          resolve({ status: 'error', error: e.message });
+        this.pendingCallbacks.forEach((resolve) => {
+          resolve({ status: 'error', error: e.message || 'Worker crashed.' });
         });
         this.pendingCallbacks.clear();
       });
 
     } catch (err: any) {
-      console.error('[mlService] Failed to create worker:', err.message);
+      this.workerErrorMsg = err.message || 'Failed to instantiate Worker class.';
+      console.error('[mlService] Failed to create worker:', this.workerErrorMsg);
       this.isWorkerAvailable = false;
     }
   }
@@ -134,6 +139,44 @@ class MLService {
   public onProgress(callback: (info: ProgressInfo) => void): () => void {
     this.progressListeners.add(callback);
     return () => this.progressListeners.delete(callback);
+  }
+
+  public async forceDownloadModel(): Promise<string> {
+    // If worker was disabled (due to previous failure), forcibly reconstruct it
+    if (!this.worker || !this.isWorkerAvailable) {
+      console.log('[mlService] Forcibly reconstructing worker...');
+      if (this.worker) {
+        this.worker.terminate();
+        this.worker = null;
+      }
+      this.initWorker();
+    }
+
+    if (!this.worker || !this.isWorkerAvailable) {
+      throw new Error(`Worker spawn failed. Reason: ${this.workerErrorMsg || 'Browser rejected the Web Worker.'}`);
+    }
+
+    return new Promise((resolve, reject) => {
+      const id = `${Date.now()}-download`;
+      
+      const timeout = setTimeout(() => {
+        this.pendingCallbacks.delete(id);
+        reject(new Error('Force download timed out after 3 minutes.'));
+      }, 180_000);
+
+      this.pendingCallbacks.set(id, (res) => {
+        clearTimeout(timeout);
+        if (res.status === 'error') {
+          console.error('[mlService] Manual force download failed:', res.error);
+          this.isWorkerAvailable = false; // Mark unavailable again so next retry will respawn
+          this.workerErrorMsg = res.error || 'Worker download crash';
+          reject(new Error(res.error ?? 'Unknown error during AI model download.'));
+        } else {
+          resolve(res.result ?? 'Downloaded');
+        }
+      });
+      this.worker!.postMessage({ id, type: 'force_download' });
+    });
   }
 
   /** 

@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { MatchRecord } from '@/types';
-import { X, Clock, ShoppingBag, Printer } from 'lucide-react';
+import { X, Clock, ShoppingBag, Printer, Wand2, Loader2, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { generateReceiptText } from '@/lib/billing';
 import { useMembers } from '@/contexts/MembersContext';
+import { mlService } from '@/services/mlService';
+import { toast } from 'sonner';
 
 interface MatchDetailModalProps {
   match: MatchRecord;
@@ -12,6 +15,77 @@ interface MatchDetailModalProps {
 
 const MatchDetailModal = ({ match, onClose }: MatchDetailModalProps) => {
   const { clubSettings } = useMembers();
+
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedText, setGeneratedText] = useState('');
+  const [mlLoadingMsg, setMlLoadingMsg] = useState('');
+
+  const handleGenerateHighlights = async () => {
+    setIsGenerating(true);
+    setGeneratedText('');
+    
+    const unsubscribe = mlService.onProgress((info) => {
+      if (info.status === 'init' || info.status === 'downloading') {
+        const percent = info.progress ? Math.round(info.progress) : 0;
+        setMlLoadingMsg(`Downloading AI assistant (~300 MB, one-time)... ${percent > 0 ? percent + '%' : ''}`);
+      } else if (info.status === 'done') {
+        setMlLoadingMsg('Generator ready!');
+      }
+    });
+
+    try {
+      const winners = match.players.filter(p => p.result === 'win').map(p => p.name);
+      const winnerText = winners.length > 0 ? winners.join(' & ') : '';
+      const playerNames = match.players.map(p => p.name).join(' & ');
+      
+      const prompt = `You are a hype-man sports commentator.
+Task: Write a 1-sentence WhatsApp highlight text for a snooker match played by ${playerNames}.
+${winnerText ? `Explicitly mention that ${winnerText} won the match.` : 'The match was a close draw.'}
+Rules:
+- Keep it under 20 words.
+- Include 1 fire emoji.
+- Example: "Epic match! Amit takes down Rahul 4-2 on Table 8! \uD83D\uDD25"`;
+
+      const result = await mlService.generateText(
+        prompt, 
+        `Write WhatsApp commentary for ${playerNames}'s match. ${winnerText ? winnerText + ' won.' : 'It was a draw.'}`, 
+        40,
+        'commentary',
+        { players: playerNames, tableNum: match.tableNumber, winner: winnerText }
+      );
+
+      const vsHeader = `*${playerNames.split(' & ').join(' vs ')} (Table ${match.tableNumber})*\n\n`;
+      setGeneratedText(vsHeader + result);
+    } catch (err) {
+      toast.error('Failed to generate highlights offline');
+    } finally {
+      setIsGenerating(false);
+      setMlLoadingMsg('');
+      unsubscribe();
+    }
+  };
+
+  const copyToWhatsApp = async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(generatedText);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = generatedText;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      toast.success('Copied! Send it on WhatsApp.');
+    } catch (err) {
+      toast.error('Failed to copy text');
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -151,10 +225,48 @@ const MatchDetailModal = ({ match, onClose }: MatchDetailModalProps) => {
           </div>
         </div>
 
+        {/* Generate / Show Highlights */}
+        {isGenerating ? (
+          <div className="mt-6 flex flex-col items-center justify-center p-4 rounded-xl bg-[hsl(var(--gold))]/5 border border-[hsl(var(--gold))]/10 text-center space-y-3">
+            <Loader2 className="w-6 h-6 text-[hsl(var(--gold))] animate-spin" />
+            <p className="text-xs font-medium text-[hsl(var(--gold))] animate-pulse">{mlLoadingMsg}</p>
+          </div>
+        ) : generatedText ? (
+          <div className="mt-6 rounded-xl bg-[#121212] border border-white/10 overflow-hidden">
+            <div className="p-3 bg-white/5 border-b border-white/10 flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-300 uppercase tracking-widest">Match Highlights</span>
+              <button 
+                onClick={handleGenerateHighlights}
+                className="text-xs text-[hsl(var(--gold))] hover:text-white transition-colors flex items-center gap-1"
+              >
+                <Wand2 className="w-3 h-3" /> Regenerate
+              </button>
+            </div>
+            <div className="p-4 text-sm font-mono text-emerald-400 whitespace-pre-wrap">
+              {generatedText}
+            </div>
+            <button 
+              onClick={copyToWhatsApp}
+              className="w-full py-3 bg-[#25D366]/10 hover:bg-[#25D366]/20 transition-colors text-[#25D366] font-bold flex items-center justify-center gap-2 text-sm border-t border-[#25D366]/20"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Copy for WhatsApp
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleGenerateHighlights}
+            className="mt-6 w-full py-4 rounded-xl bg-[hsl(var(--gold))]/10 border border-[hsl(var(--gold))]/20 text-[hsl(var(--gold))] hover:bg-[hsl(var(--gold))]/20 transition-colors font-bold flex items-center justify-center gap-2"
+          >
+            <Wand2 className="w-5 h-5" />
+            Generate AI Highlights
+          </button>
+        )}
+
         {/* Print Button */}
         <button
           onClick={handlePrint}
-          className="mt-6 w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold flex items-center justify-center gap-2"
+          className="mt-3 w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold flex items-center justify-center gap-2"
         >
           <Printer className="w-5 h-5" />
           Print Receipt

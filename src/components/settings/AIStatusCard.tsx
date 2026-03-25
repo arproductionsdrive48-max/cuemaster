@@ -10,6 +10,7 @@ const AIStatusCard = () => {
   const [progress, setProgress] = useState(0);
   const [progressFile, setProgressFile] = useState('');
   const [isTriggering, setIsTriggering] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   // Check if model is cached in IndexedDB on mount
   useEffect(() => {
@@ -41,6 +42,7 @@ const AIStatusCard = () => {
     setIsTriggering(true);
     setStatus('downloading');
     setProgress(0);
+    setErrorMsg('');
 
     const unsubscribe = mlService.onProgress((info: any) => {
       if (info?.status === 'progress' || info?.status === 'downloading' || info?.status === 'init') {
@@ -58,18 +60,14 @@ const AIStatusCard = () => {
     });
 
     try {
-      // Trigger model load by sending a dummy generation
-      await mlService.generateText(
-        'Reply OK only.',
-        'OK',
-        1,
-        'generic'
-      );
+      // Trigger model load explicitly
+      await mlService.forceDownloadModel();
       setStatus('ready');
       toast.success('✅ AI Smart Features are ready!');
     } catch (err: any) {
       console.error('[AIStatusCard] Download failed:', err.message);
       setStatus('error');
+      setErrorMsg(err.message || String(err));
       toast.error('Model download failed. Check your internet connection and try again.');
     } finally {
       setIsTriggering(false);
@@ -133,7 +131,7 @@ const AIStatusCard = () => {
               className="w-full py-3 rounded-xl bg-[hsl(var(--gold))]/10 border border-[hsl(var(--gold))]/20 text-[hsl(var(--gold))] font-bold flex items-center justify-center gap-2 hover:bg-[hsl(var(--gold))]/20 transition-all text-sm"
             >
               <Download className="w-4 h-4" />
-              Download AI Model (~300 MB)
+              Force Download Model (~300 MB)
             </button>
           </>
         )}
@@ -174,12 +172,15 @@ const AIStatusCard = () => {
 
         {status === 'error' && (
           <>
-            <p className="text-xs text-red-400">Download failed. Please check your internet connection and try again.</p>
+            <p className="text-xs text-red-400 font-mono break-all bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+              <strong className="block mb-1 text-red-500 uppercase tracking-widest text-[10px]">Exact Error</strong>
+              {errorMsg || 'Download failed. Please check your internet connection.'}
+            </p>
             <button
               onClick={handleDownload}
               className="w-full py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-bold flex items-center justify-center gap-2 text-sm"
             >
-              <Download className="w-4 h-4" /> Retry Download
+              <Download className="w-4 h-4" /> Force Download Model
             </button>
           </>
         )}

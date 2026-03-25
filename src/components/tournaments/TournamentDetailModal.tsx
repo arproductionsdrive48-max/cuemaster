@@ -489,6 +489,13 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
 
     setPlayerTrophies(trophiesUpdate);
 
+    // Auto-assign prize winners for 1st and 2nd
+    const updatedPrizes = localTournament.prizeDistribution?.map(p => {
+      if (p.place === 1 && derivedChampion) return { ...p, winner: derivedChampion };
+      if (p.place === 2 && derivedRunnerUp) return { ...p, winner: derivedRunnerUp };
+      return p;
+    });
+
     // Update member profiles in context
     [derivedChampion, derivedRunnerUp, ...derivedThirdPlace].filter(Boolean).forEach((playerName, idx) => {
       const member = members.find(m => m.name === playerName);
@@ -506,6 +513,7 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
       status: 'completed',
       winner: derivedChampion,
       trophies: trophiesUpdate,
+      prizeDistribution: updatedPrizes,
     };
     setLocalTournament(updated);
     persistUpdate(updated, bracket);
@@ -523,6 +531,16 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
     toast.success(`Trophy awarded to ${player}!`);
     setTrophyPlayer(null);
     setTrophyName('');
+  };
+
+  const handleAssignPrizeWinner = (place: number, winnerName: string) => {
+    const updatedPrizes = localTournament.prizeDistribution?.map(p => 
+      p.place === place ? { ...p, winner: winnerName || undefined } : p
+    );
+    const updatedT = { ...localTournament, prizeDistribution: updatedPrizes };
+    setLocalTournament(updatedT);
+    persistUpdate(updatedT, bracket);
+    toast.success(`Prize winner updated!`);
   };
 
   const liveMatches = bracket.filter(m => m.status === 'live');
@@ -711,7 +729,25 @@ const TournamentDetailModal = ({ tournament, onClose, onRegister, onUpdate }: To
                           <span className={prize.place === 1 ? 'text-[hsl(var(--gold))]' : 'text-gray-300'}>
                             {prize.place === 1 ? '1st Place' : prize.place === 2 ? '2nd Place' : prize.place === 3 ? '3rd Place' : `${prize.place}th Place`}
                           </span>
-                          {localTournament.winner && prize.place === 1 && <span className="ml-3 text-[10px] px-2 py-0.5 rounded-full bg-[hsl(var(--gold))]/10 text-[hsl(var(--gold))] border border-[hsl(var(--gold))]/20">{localTournament.winner}</span>}
+                          
+                          {localTournament.status === 'completed' ? (
+                            <select
+                              value={prize.winner || ''}
+                              onChange={(e) => handleAssignPrizeWinner(prize.place, e.target.value)}
+                              className="ml-3 text-[10px] bg-[#1A1A1A] border border-white/10 rounded px-2 py-0.5 text-white outline-none focus:border-[hsl(var(--gold))]/50"
+                            >
+                              <option value="">Select Winner...</option>
+                              {localTournament.registeredPlayers.map(p => (
+                                <option key={p} value={p}>{p}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            localTournament.winner && prize.place === 1 ? (
+                              <span className="ml-3 text-[10px] px-2 py-0.5 rounded-full bg-[hsl(var(--gold))]/10 text-[hsl(var(--gold))] border border-[hsl(var(--gold))]/20">{localTournament.winner}</span>
+                            ) : (
+                              prize.winner && <span className="ml-3 text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white border border-white/20">{prize.winner}</span>
+                            )
+                          )}
                         </span>
                         <span className={cn("font-extrabold text-lg", prize.place === 1 ? "text-[hsl(var(--gold))]" : "text-white")}>₹{prize.amount.toLocaleString()}</span>
                       </div>

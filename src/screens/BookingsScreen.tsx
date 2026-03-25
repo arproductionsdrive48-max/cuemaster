@@ -113,6 +113,14 @@ const BookingsScreen = () => {
     });
   };
 
+  const handleCompleteBooking = (bookingId: string) => {
+    if (!isOnline) { toast.error('Offline – changes will not save'); return; }
+    sbUpdateStatus({ id: bookingId, status: 'completed' }, {
+      onSuccess: () => toast.success('Booking marked as completed!'),
+      onError: (err: any) => toast.error(err?.message || 'Failed to complete booking'),
+    });
+  };
+
   const handleCancelBooking = (bookingId: string) => {
     if (!isOnline) { toast.error('Offline – changes will not save'); return; }
     sbUpdateStatus({ id: bookingId, status: 'cancelled' }, {
@@ -192,6 +200,7 @@ const BookingsScreen = () => {
                    booking={booking}
                    tablePricing={{ perHour: 200, perMinute: 3.33, perFrame: 100, peakHourRate: 250, offPeakRate: 150, peakHoursStart: '18:00', peakHoursEnd: '23:00', defaultBillingMode: 'hourly' }} // Default fallback, should ideally come from MembersContext config
                    onConfirm={handleConfirmBooking}
+                   onComplete={handleCompleteBooking}
                    onCancel={handleCancelBooking}
                    onRemind={handleRemind}
                    onAddNote={handleAddNote}

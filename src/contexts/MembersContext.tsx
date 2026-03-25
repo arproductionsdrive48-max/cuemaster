@@ -7,13 +7,13 @@
  * - On any critical fetch error → reports to ConnectionContext → FullScreenErrorOverlay.
  */
 
-import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useConnection } from '@/contexts/ConnectionContext';
 import { isCriticalMessage } from '@/contexts/ConnectionContext';
 import {
   Member, Camera, InventoryItem, ClubSettings,
-  TablePricing, IndividualTablePricing, TableSession, MatchRecord, Tournament,
+  TablePricing, IndividualTablePricing, TableSession, MatchRecord, Tournament, Booking
 } from '@/types';
 import { isSupabaseConnected } from '@/lib/supabase';
 import {
@@ -41,6 +41,8 @@ import {
   useDeleteCamera as useSupabaseDeleteCamera,
   useClubSettings as useSupabaseClubSettings,
   useUpdateClubSettings as useSupabaseUpdateClubSettings,
+  useBookings as useSupabaseBookings,
+  useUpdateBooking as useSupabaseUpdateBooking
 } from '@/hooks/useSupabaseQuery';
 import { useRealtimeManager } from '@/hooks/useRealtimeManager';
 import { toast } from 'sonner';
@@ -61,6 +63,7 @@ const defaultClubSettings: ClubSettings = {
   tablePricing: defaultTablePricing,
   individualTablePricing: [],
   showMembershipBadge: true,
+  autoStartBookings: true,
   clubName: 'Snook OS',
   clubLogo: '',
   gstEnabled: false,
@@ -145,6 +148,7 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
   const { data: sbInventory } = useSupabaseInventory(online ? clubId : null);
   const { data: sbCameras } = useSupabaseCameras(online ? clubId : null);
   const { data: sbClubSettings } = useSupabaseClubSettings(online ? clubId : null);
+  const { data: sbBookings } = useSupabaseBookings(online ? clubId : null);
 
   // — Error routing: critical → overlay, query-level → toast + red dot —
   useEffect(() => {
@@ -190,6 +194,7 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
   const { mutate: sbUpdateCamera } = useSupabaseUpdateCamera(clubId);
   const { mutate: sbDeleteCamera } = useSupabaseDeleteCamera(clubId);
   const { mutate: sbUpdateSettings } = useSupabaseUpdateClubSettings(clubId);
+  const { mutate: sbUpdateBooking } = useSupabaseUpdateBooking(clubId);
 
   // — Final values: empty arrays when offline / errored —
   const members: Member[] = online && !membersError ? (sbMembers ?? []) : [];
@@ -199,6 +204,7 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
   const tournaments: Tournament[] = online && !tournamentsError ? (sbTournaments ?? []) : [];
   // tables come 100% from Supabase (tables + sessions join). No local fallback.
   const tables: TableSession[] = online && !tablesError ? (sbTables ?? []) : [];
+  const bookings: Booking[] = online ? (sbBookings ?? []) : [];
   const clubSettings: ClubSettings = online && sbClubSettings && Object.keys(sbClubSettings).length
     ? { ...defaultClubSettings, ...sbClubSettings }
     : defaultClubSettings;
@@ -246,6 +252,94 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [online, sbUpdateTable]);
 
+  // Keep latest context in ref for the poller
+  const pollerContext = useRef({ tables, bookings, clubSettings, online, updateTable, sbUpdateBooking });
+  useEffect(() => {
+    pollerContext.current = { tables, bookings, clubSettings, online, updateTable, sbUpdateBooking };
+  }, [tables, bookings, clubSettings, online, updateTable, sbUpdateBooking]);
+
+  // Local memory to prevent double-starts before DB resolves
+  const autoStartedBookingsToday = useRef<Set<string>>(new Set());
+
+  // — Booking Auto-Start Poller —
+  useEffect(() => {
+    // Run the interval purely on mount/unmount to avoid clearInterval loops
+    const interval = setInterval(() => {
+      const { tables, bookings, clubSettings, online, updateTable, sbUpdateBooking } = pollerContext.current;
+      
+      if (!online || !clubSettings.autoStartBookings || !tables.length || !bookings.length) return;
+
+      const now = new Date();
+      // Get today's confirmed bookings using robust manual extraction to strictly guarantee YYYY-MM-DD
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${y}-${m}-${d}`;
+      
+      const validBookings = bookings.filter(b => {
+        if (b.status !== 'confirmed') return false;
+        
+        let bDateStr = '';
+        if (typeof b.date === 'string') {
+          bDateStr = (b.date as string).split('T')[0];
+        } else {
+          const bd = b.date as Date;
+          const by = bd.getFullYear();
+          const bm = String(bd.getMonth() + 1).padStart(2, '0');
+          const bDay = String(bd.getDate()).padStart(2, '0');
+          bDateStr = `${by}-${bm}-${bDay}`;
+        }
+        return bDateStr === todayStr;
+      });
+
+      validBookings.forEach(booking => {
+        // Skip bookings already handled in this session
+        if (autoStartedBookingsToday.current.has(booking.id)) return;
+        
+        if (!booking.startTime || !booking.endTime) return;
+        
+        const [startH, startM] = booking.startTime.split(':').map(Number);
+        const [endH, endM] = booking.endTime.split(':').map(Number);
+        
+        const startTime = new Date(now);
+        startTime.setHours(startH, startM, 0, 0);
+        
+        const endTime = new Date(now);
+        endTime.setHours(endH, endM, 0, 0);
+
+        const table = tables.find(t => t.tableNumber === booking.tableNumber);
+
+        // Allow starting if current time is >= start time and < end time
+        if (now >= startTime && now < endTime) {
+          if (table && table.status === 'free') {
+             console.log('[Snook OS] Auto-starting booking', booking.id, 'for table', table.tableNumber);
+             autoStartedBookingsToday.current.add(booking.id);
+             
+             // Tag it permanently in the DB as 'completed' so it doesn't infinite loop if the table frees up before endTime
+             sbUpdateBooking({ id: booking.id, status: 'completed' });
+             
+             const newSession: TableSession = {
+               ...table,
+               status: 'occupied',
+               players: [booking.customerName],
+               startTime: new Date(),
+               pausedTime: 0,
+               items: [],
+               totalBill: 0,
+               billingMode: table.billingMode ?? (clubSettings.tablePricing?.defaultBillingMode || 'hourly'),
+               frameCount: 0,
+             };
+             
+             toast.success(`Booking Started: ${booking.customerName} - Table ${table.tableNumber}`);
+             updateTable(newSession);
+          }
+        }
+      });
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
   // — Members —
   const addMember = useCallback((memberData: Omit<Member, 'id' | 'avatar' | 'lastVisit' | 'gamesPlayed' | 'wins' | 'losses' | 'creditBalance'> & { isGuest?: boolean }) => {
     if (online) sbAddMember(memberData);
@@ -283,8 +377,14 @@ export const MembersProvider = ({ children }: { children: ReactNode }) => {
 
   // — Club Settings —
   const updateClubSettings = useCallback((settings: Partial<ClubSettings>) => {
-    if (online) sbUpdateSettings(settings);
-  }, [online, sbUpdateSettings]);
+    if (online) {
+      // Optimistic update for instant UI feedback
+      qc.setQueryData(['club-settings', clubId], (old: Partial<ClubSettings> | undefined) => {
+        return old ? { ...old, ...settings } : settings;
+      });
+      sbUpdateSettings(settings);
+    }
+  }, [online, sbUpdateSettings, qc, clubId]);
 
   // — Match History —
   const addMatchRecord = useCallback((record: Omit<MatchRecord, 'id'>) => {

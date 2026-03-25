@@ -15,6 +15,7 @@ export interface TableSession {
   totalBill: number;
   billingMode: BillingMode;
   frameCount: number;
+  bookingId?: string;
 }
 
 export interface OrderItem {
@@ -133,7 +134,7 @@ export interface Booking {
   date: Date;
   startTime: string;
   endTime: string;
-  status: 'confirmed' | 'pending' | 'cancelled' | 'waitlisted';
+  status: 'confirmed' | 'pending' | 'cancelled' | 'waitlisted' | 'completed';
   advancePayment?: number;
   discount?: number;
   note?: string;
@@ -164,6 +165,7 @@ export interface ClubSettings {
   timezone?: string;
   ga4PropertyId?: string;
   ga4ServiceAccountJson?: string;
+  autoStartBookings?: boolean;
 }
 
 export type TabType = 'home' | 'tables' | 'events' | 'members' | 'more';
@@ -174,6 +176,7 @@ export type TournamentStatus = 'upcoming' | 'in_progress' | 'completed';
 export interface PrizeDistribution {
   place: number;
   amount: number;
+  winner?: string;
 }
 
 export interface Tournament {
