@@ -1120,35 +1120,6 @@ export const useDeletePromotionTemplate = (clubId: string | null) => {
   });
 };
 
-// ─── QR TOKENS ──────────────────────────────────────────────────────────────
-export const useGenerateQRToken = (clubId: string | null) => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (tableId: string) => {
-      const sb = requireSupabase(clubId);
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-      
-      const { data, error } = await sb
-        .from('table_qr_tokens')
-        .insert({
-          table_id: tableId,
-          club_id: clubId,
-          expires_at: expiresAt,
-          used: false
-        })
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return data;
-    },
-    onError: (err: any) => {
-      console.error('[Snook OS] generateQRToken error:', err);
-      toast.error(`Failed to generate QR: ${err?.message ?? String(err)}`);
-    },
-  });
-};
-
 // ─── MAPPERS ─────────────────────────────────────────────────────────────────
 const mapDbMember = (row: any): Member => ({
   id: row.id,

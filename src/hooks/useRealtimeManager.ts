@@ -36,7 +36,6 @@ const TABLE_TO_QUERY_KEY: Record<string, string> = {
   clubs:                'club-settings',
   promotion_templates:  'promotion-templates',
   fcm_tokens:           'fcm-tokens',
-  table_qr_tokens:      'tables',       // QR usage starts a session, so invalidate tables
 };
 
 const DB_TABLES = Object.keys(TABLE_TO_QUERY_KEY);
@@ -197,19 +196,6 @@ export const useRealtimeManager = (clubId: string | null, options?: RealtimeMana
           (payload: any) => {
             // Invalidate the corresponding react-query cache key
             qcRef.current.invalidateQueries({ queryKey: [queryKey, cid] });
-
-            // Special handling for QR code session starts
-            if (table === 'table_qr_tokens' && payload.eventType === 'UPDATE' && payload.new.used === true && payload.old.used === false) {
-              const tableId = payload.new.table_id;
-              // Try to find the table number from cache
-              const tables = qcRef.current.getQueryData<TableSession[]>(['tables', cid]);
-              const targetTable = tables?.find(t => t.id === tableId);
-              
-              toast.success(`Session started via QR on Table ${targetTable?.tableNumber || '??'}`, {
-                icon: '⚡',
-                duration: 5000
-              });
-            }
           },
         )
         .subscribe((status: string, err?: Error) => {
