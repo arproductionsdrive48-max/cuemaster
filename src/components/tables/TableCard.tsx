@@ -72,7 +72,7 @@ const TableCard = ({ table, onClick, disabled, onAction, onQRClick }: TableCardP
           disabled && 'opacity-50 cursor-not-allowed hover:scale-100'
         )}
       >
-        {/* Snooker Table Image */}
+      {/* Snooker Table Image */}
         <div className="relative mb-3 rounded-xl overflow-hidden">
           <img 
             src={tableImage} 
@@ -97,6 +97,17 @@ const TableCard = ({ table, onClick, disabled, onAction, onQRClick }: TableCardP
               {config.label}
             </span>
           </div>
+          {/* QR button on mobile image */}
+          <button
+            className="absolute bottom-2 right-2 w-7 h-7 rounded-lg bg-background/80 backdrop-blur-sm border border-border/50 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onQRClick) onQRClick(e);
+            }}
+            title="Generate QR Code"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         <div className="flex items-center justify-between">

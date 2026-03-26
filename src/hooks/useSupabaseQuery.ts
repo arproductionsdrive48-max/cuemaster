@@ -1296,3 +1296,5 @@ const mapDbInventory = (row: any): InventoryItem => ({
   icon: row.icon || '📦',
   stock: row.stock || 0,
 });
+
+
